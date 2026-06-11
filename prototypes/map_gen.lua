@@ -1,17 +1,17 @@
--- Nauvis map-gen takeover (ADR 0001): the whole world is generated at data
--- stage — floors, ore tendrils, water and nest pockets — then hidden under
--- solid rock cover. Runtime code only reacts to digging.
+-- Nauvis map-gen takeover (ADR 0001, amended by ADR 0004): floors and water
+-- are generated at data stage, hidden under solid rock/tree cover. Ore does
+-- NOT pre-generate — veins materialize at dig time from seeded runtime noise
+-- (scripts/ore_veins.lua), except a light mixed starter patch in the carve-out.
 local CARVE_RADIUS = settings.startup["diggy-carve-out-radius"].value
 
 data:extend({
-    -- Open blobs inside the rock cover. Suppresses rock above 0.65;
-    -- enemy nests only above 0.72, so every nest sits inside a pocket.
+    -- Tiny tree-cover patches mixed into the rock mass.
     {
         type = "noise-expression",
-        name = "diggy_pocket",
-        expression = "basis_noise{x = x, y = y, seed0 = map_seed, seed1 = 7700, input_scale = 1/24, output_scale = 1}",
+        name = "diggy_trees",
+        expression = "basis_noise{x = x, y = y, seed0 = map_seed, seed1 = 9900, input_scale = 1/12, output_scale = 1}",
     },
-    -- Rare water pockets, carved out of the otherwise flat elevation.
+    -- Rare sealed water pockets, carved out of the otherwise flat elevation.
     {
         type = "noise-expression",
         name = "diggy_water",
@@ -21,30 +21,31 @@ data:extend({
 
 data.raw["simple-entity"]["diggy-rock"].autoplace = {
     order = "a[diggy]-a[rock]",
-    probability_expression = ("(distance > %d) * 2 - 1 - max(0, diggy_pocket - 0.65) * 1000"):format(CARVE_RADIUS),
+    -- Solid everywhere outside the carve-out; tree patches displace rock.
+    probability_expression = ("(distance > %d) * 2 - 1 - max(0, diggy_trees - 0.72) * 1000"):format(CARVE_RADIUS),
 }
 
--- Ore tendrils: thin ribbons of ridged noise, one seed per resource, gated by
--- depth so richer/rarer ores need deeper digs. Richness grows with depth.
-local function tendril(resource, opts)
-    local proto = data.raw.resource[resource]
-    if not proto then return end
-    proto.autoplace = {
-        order = "b[diggy-ore]",
+data.raw.tree["diggy-tree"].autoplace = {
+    order = "a[diggy]-b[tree]",
+    probability_expression = ("(max(0, diggy_trees - 0.72) * (distance > %d)) * 2 - 1"):format(CARVE_RADIUS),
+}
+
+-- Starter patch: light-density mixed ore inside the carve-out so a fresh team
+-- can hand-mine enough for basic defenses before the first real dig.
+local function starter_patch(resource, seed)
+    data.raw.resource[resource].autoplace = {
+        order = "b[diggy-starter]",
         probability_expression = (
-            "(max(0, abs(basis_noise{x = x, y = y, seed0 = map_seed, seed1 = %d, input_scale = 1/40, output_scale = 1}) < %f)"
-            .. " * (distance > %d)) * 2 - 1"
-        ):format(opts.seed, opts.width, opts.min_depth),
-        richness_expression = ("%d + distance * %d"):format(opts.base_richness, opts.depth_richness),
+            "((distance < %d) * (basis_noise{x = x, y = y, seed0 = map_seed, seed1 = %d, input_scale = 1/5, output_scale = 1} > 0.55)) * 2 - 1"
+        ):format(CARVE_RADIUS - 1, seed),
+        richness_expression = "80",
     }
 end
 
-tendril("iron-ore", { seed = 1100, width = 0.055, min_depth = CARVE_RADIUS + 4, base_richness = 400, depth_richness = 3 })
-tendril("copper-ore", { seed = 1200, width = 0.050, min_depth = 40, base_richness = 400, depth_richness = 3 })
-tendril("coal", { seed = 1300, width = 0.050, min_depth = CARVE_RADIUS + 4, base_richness = 350, depth_richness = 2 })
-tendril("stone", { seed = 1400, width = 0.040, min_depth = 40, base_richness = 300, depth_richness = 2 })
-tendril("uranium-ore", { seed = 1500, width = 0.022, min_depth = 250, base_richness = 300, depth_richness = 2 })
-tendril("crude-oil", { seed = 1600, width = 0.018, min_depth = 120, base_richness = 120000, depth_richness = 600 })
+starter_patch("iron-ore", 5510)
+starter_patch("copper-ore", 5520)
+starter_patch("coal", 5530)
+starter_patch("stone", 5540)
 
 local nauvis = data.raw.planet["nauvis"]
 local mgs = nauvis.map_gen_settings
@@ -52,13 +53,14 @@ local mgs = nauvis.map_gen_settings
 mgs.autoplace_settings = mgs.autoplace_settings or {}
 local placed = {}
 for _, name in pairs({
-    "diggy-rock",
-    "iron-ore", "copper-ore", "coal", "stone", "uranium-ore", "crude-oil",
+    "diggy-rock", "diggy-tree",
+    "iron-ore", "copper-ore", "coal", "stone",
 }) do
     placed[name] = {}
 end
--- Only our entities generate: no trees, vanilla rocks, fish — and no enemies;
--- hostiles enter the world exclusively via dig spawns (see scripts/dig_spawner.lua).
+-- Only our entities generate. No vanilla terrain content, no pre-placed ore
+-- beyond the starter patch, and no enemies; hostiles and ore veins enter the
+-- world exclusively through digging.
 mgs.autoplace_settings.entity = { settings = placed, treat_missing_as_default = false }
 
 -- Flat land everywhere except sealed water pockets; no cliffs.

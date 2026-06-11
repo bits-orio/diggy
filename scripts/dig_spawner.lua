@@ -55,9 +55,8 @@ local function spawn_nest(surface, position, tier)
     end
 end
 
-function dig_spawner.on_dig(event)
-    local entity = event.entity
-    local position = entity.position
+function dig_spawner.on_dig(dig)
+    local position = dig.position
     if position.x * position.x + position.y * position.y < PEACEFUL_DEPTH * PEACEFUL_DEPTH then
         return
     end
@@ -69,7 +68,7 @@ function dig_spawner.on_dig(event)
         return
     end
 
-    local surface = entity.surface
+    local surface = dig.surface
     local tier = tier_for(game.forces.enemy.get_evolution_factor(surface))
     if roll < nest_chance then
         spawn_nest(surface, position, tier)

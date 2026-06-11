@@ -2,8 +2,14 @@
 Version: 0.1.0
 Date: ????
   Features:
-    - Initial scaffold: nauvis becomes a fully pre-generated world hidden under solid rock cover.
-    - Dig by hand or damage to reveal terrain; construction robots cannot deconstruct rock cover.
-    - Ore tendrils, sealed water pockets, and pre-spawned enemy nest pockets, all from data-stage noise.
-    - Per-surface dig tracking: volume dug raises enemy evolution (host-tunable), depth recorded for progression.
+    - Initial scaffold: nauvis becomes a pre-generated world hidden under solid rock cover.
+    - Dig by hand or damage to reveal terrain; construction robots cannot deconstruct cover.
+    - Ore veins materialize at dig time from map-seed-deterministic noise; no pre-generated ore spoilers.
+    - Light mixed starter ore patch inside the spawn carve-out.
+    - Hand-mining rock yields a random ore mix on top of stone, richer with depth.
+    - Treasure chests sealed in the cover at seed-fixed locations; loot scales with depth.
+    - Dig spawns: biters and rarer nests/worms appear only as dig consequences; expansion off by default.
+    - Tree-cover patches: quick to mine, flammable, otherwise behave as rock cover.
+    - Map starts dark except one chunk at spawn; the chart grows as you dig.
+    - Sealed water pockets; per-surface dig tracking drives evolution (host-tunable).
     - Mid-save install detection with a clear warning (Diggy requires a new map).

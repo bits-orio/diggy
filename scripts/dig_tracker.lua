@@ -16,15 +16,14 @@ local function stats_for(surface)
     return stats
 end
 
--- Fires for any death/mining of a diggy-rock (event handlers are filtered by
--- control.lua), i.e. every dig regardless of tool: hand, explosives, vehicle.
-function dig_tracker.on_dig(event)
-    local entity = event.entity
-    local surface = entity.surface
+-- Receives the dig context snapshot from control.lua, for every dig
+-- regardless of tool: hand, explosives, fire, vehicle.
+function dig_tracker.on_dig(dig)
+    local surface = dig.surface
     local stats = stats_for(surface)
 
     stats.volume = stats.volume + 1
-    local p = entity.position
+    local p = dig.position
     local depth = math.sqrt(p.x * p.x + p.y * p.y)
     if depth > stats.depth then
         stats.depth = depth

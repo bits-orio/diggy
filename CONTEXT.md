@@ -14,9 +14,20 @@ _Avoid_: diggy surface, cave surface
 The solid mass of minable rock entities autoplaced over all undug terrain. Mining it is how the world is revealed.
 _Avoid_: walls, void rocks
 
+**Tree cover**:
+Tiny patches of dense trees mixed into the rock cover. Same rules as rock (bot-proof, hides terrain, counts as a dig) but quicker to mine — and flammable.
+_Avoid_: forest
+
 **Dig**:
-The death of a rock-cover entity — by hand-mining or by damage (explosives, vehicles, gunfire) — revealing the pre-generated terrain beneath. Digging *reveals* the world; it does not create it. Construction robots cannot deconstruct rock cover; explosives are the automation path for mass digging.
+The death of a cover entity (rock or tree) — by hand-mining or by damage (explosives, fire, vehicles, gunfire) — revealing the terrain beneath and rolling for veins, treasure, and dig spawns. Construction robots cannot deconstruct cover; explosives and fire are the automation paths for mass digging.
 _Avoid_: excavate, void removal (the scenario-era term — no longer accurate)
+
+**Ore vein**:
+Ore that materializes at the dug tile, computed from noise seeded by the map seed — deterministic, but not existing as entities until dug. Veins never pre-generate (except the starter patch).
+_Avoid_: ore patch, scattered resources (scenario-era term)
+
+**Starter patch**:
+The only pre-generated ore: a light-density mix inside the spawn carve-out, enough to hand-mine basic defenses before the first dig.
 
 **Spawn carve-out**:
 The small pre-revealed safe area at the map origin where a team starts, ringed by rock cover.
