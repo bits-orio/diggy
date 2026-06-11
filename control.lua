@@ -223,6 +223,23 @@ commands.add_command("diggy-sim", { "diggy.command-sim" }, function(event)
     end
 end)
 
+commands.add_command("diggy-mine", { "diggy.command-mine" }, function(event)
+    local player = event.player_index and game.get_player(event.player_index)
+    if not player then return end
+    if not player.admin then
+        player.print({ "diggy.admin-only" })
+        return
+    end
+    if not player.character then
+        player.print({ "diggy.kit-needs-character" })
+        return
+    end
+    local value = tonumber(event.parameter) or 10
+    local before = player.character_mining_speed_modifier
+    player.character_mining_speed_modifier = value
+    player.print({ "diggy.mine-set", string.format("%.1f", before), string.format("%.1f", value) })
+end)
+
 commands.add_command("diggy-kit", { "diggy.command-kit" }, function(event)
     local player = event.player_index and game.get_player(event.player_index)
     if not player then return end
