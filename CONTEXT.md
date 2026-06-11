@@ -23,8 +23,8 @@ The small pre-revealed safe area at the map origin where a team starts, ringed b
 _Avoid_: starting zone (the scenario-era term)
 
 **Pocket**:
-A pre-generated open space inside the rock cover (water pocket, room, nest pocket) that is sealed until dug into.
-_Avoid_: room (scenario-era term)
+A pre-generated open space inside the rock cover (water or treasure pocket), sealed until dug into. Pockets are always benign — hostiles never pre-exist (see Dig spawn).
+_Avoid_: room (scenario-era term), nest pocket (rejected design)
 
 **Treasure**:
 Loot containers sealed inside the rock cover or pockets, found by digging. There is no coin currency and no market in this mod.
@@ -58,6 +58,10 @@ A spawnable hostile defined by a declarative spec (entity names, depth gate, wei
 
 **Threat tier**:
 A depth-gated band of the threat pool. Digging past a tier's depth unlocks its threats for spawn rolls.
+
+**Dig spawn**:
+Hostiles materializing as the consequence of a dig roll — the only way enemies ever enter the world. Common rolls produce units; rare rolls produce a nest or worm in the revealed space. Vanilla biter expansion is off by default so this stays the sole nest source.
+_Avoid_: pre-spawned nests, alien spawner (scenario-era term)
 
 **Evolution pressure**:
 The contribution of total volume dug to enemy evolution — greed makes the baseline meaner, while depth decides what shows up.

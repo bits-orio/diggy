@@ -6,7 +6,7 @@ Decisions deliberately left open during the 2026-06-10 design session. Each entr
 
 ### Special biters from other mods (threat pool details)
 The plumbing is settled (ADR 0002: adapters + `diggy-v1` `register_threat(spec)` + `on_threat_spawned` event). Deferred:
-- The threat spec schema (entity names vs. name patterns, depth gate, weight, pack size, evolution scaling, spawn placement rules — emerge from freshly dug rock? from pocket walls?).
+- The threat spec schema (entity names vs. name patterns, depth gate, weight, pack size, evolution scaling). Placement rule is settled: threats materialize at the dug tile (dig spawn) — `scripts/dig_spawner.lua` is the seed this registry grows from.
 - Mother adapter specifics: which tiers map to which depths; resolve existing prototypes at runtime (`Schall-category-N-mother-spitter`, names vary with SchallEndgameEvolution installed).
 - Which other mods get bundled adapters (candidates: Rampant-style factions, Armoured Biters — survey when core is done).
 - Spawn cadence: per-dig roll vs. depth-crossing trigger vs. timed waves.
@@ -45,6 +45,7 @@ The black-void look of the original is sacrificed by the pre-generated model (AD
 Cutscene, blueprint_tools GUI, antigrief autojail, restart command, shelob, flaming_pumpjack, RedMew rank integration. Revisit only on demand.
 
 ## Standing constraints (don't re-litigate)
+- Hostiles only ever appear via dig spawns. No pre-spawned nests (reversed 2026-06-10 after playtest); biter expansion off by default so digging stays the sole nest source.
 - MTS and ODB are optional dependencies; Diggy must be fully playable with neither.
 - Diggy never grants starting gear (FasterStart / MTS starter items own that).
 - Every difficulty knob is a host setting; presets scale them together.

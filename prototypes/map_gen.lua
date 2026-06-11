@@ -46,17 +46,6 @@ tendril("stone", { seed = 1400, width = 0.040, min_depth = 40, base_richness = 3
 tendril("uranium-ore", { seed = 1500, width = 0.022, min_depth = 250, base_richness = 300, depth_richness = 2 })
 tendril("crude-oil", { seed = 1600, width = 0.018, min_depth = 120, base_richness = 120000, depth_richness = 600 })
 
--- Enemy nests pre-spawn sealed inside pockets, never near the carve-out.
-for _, name in pairs({ "biter-spawner", "spitter-spawner", "small-worm-turret", "medium-worm-turret" }) do
-    local proto = data.raw["unit-spawner"][name] or data.raw["turret"][name]
-    if proto then
-        proto.autoplace = {
-            order = "c[diggy-enemy]",
-            probability_expression = "(max(0, diggy_pocket - 0.72) * (distance > 60)) * 2 - 1",
-        }
-    end
-end
-
 local nauvis = data.raw.planet["nauvis"]
 local mgs = nauvis.map_gen_settings
 
@@ -65,11 +54,11 @@ local placed = {}
 for _, name in pairs({
     "diggy-rock",
     "iron-ore", "copper-ore", "coal", "stone", "uranium-ore", "crude-oil",
-    "biter-spawner", "spitter-spawner", "small-worm-turret", "medium-worm-turret",
 }) do
     placed[name] = {}
 end
--- Only our entities generate: no trees, vanilla rocks, or fish.
+-- Only our entities generate: no trees, vanilla rocks, fish — and no enemies;
+-- hostiles enter the world exclusively via dig spawns (see scripts/dig_spawner.lua).
 mgs.autoplace_settings.entity = { settings = placed, treat_missing_as_default = false }
 
 -- Flat land everywhere except sealed water pockets; no cliffs.

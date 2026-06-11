@@ -14,18 +14,17 @@ rock.map_color = { r = 0.20, g = 0.16, b = 0.13 }
 rock.max_health = 500
 rock.dying_explosion = "rock-damaged-explosion"
 
--- Big-rock sprites are drawn for a ~2-tile entity; halve them to fit one tile.
--- (Proper cave-wall art is a later polish pass — see docs/BACKLOG.md.)
-for _, variation in pairs(rock.pictures) do
-    local sprites = variation.layers or { variation }
-    for _, sprite in pairs(sprites) do
-        sprite.scale = (sprite.scale or 1) * 0.5
-        if sprite.shift then
-            local sx = sprite.shift[1] or sprite.shift.x or 0
-            local sy = sprite.shift[2] or sprite.shift.y or 0
-            sprite.shift = { sx * 0.5, sy * 0.5 }
-        end
+-- Mixed big/huge rock sprites at natural size: collision stays one tile so
+-- autoplace packs a rock per tile, while the oversized sprites overlap their
+-- neighbours and hide the terrain and ore beneath until dug (the Mountain
+-- Fortress trick). Selection stays a precise single tile.
+local variations = {}
+for _, source in pairs({ "big-rock", "huge-rock" }) do
+    local pictures = data.raw["simple-entity"][source].pictures
+    for _, picture in pairs(table.deepcopy(pictures)) do
+        variations[#variations + 1] = picture
     end
 end
+rock.pictures = variations
 
 data:extend({ rock })
