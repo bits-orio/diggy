@@ -119,6 +119,9 @@ end
 -- Carve a tile fully open (cavern carving): removes any wall entity, opens
 -- void as floor with its vein. skip_vein for tiles about to be re-tiled
 -- (sanctuaries), where ore would end up under water or grass.
+-- Returns true only when the tile transitioned void -> floor (the caller
+-- charges ceiling debt per OPENED tile exactly once; already-open overlap
+-- tiles paid their +1 when they were first dug or carved).
 function world.carve_tile(surface, x, y, force, skip_vein)
     ensure_chunk(surface, x, y)
     for _, entity in pairs(surface.find_entities_filtered {
@@ -129,22 +132,18 @@ function world.carve_tile(surface, x, y, force, skip_vein)
         collapse.support_removed(surface, entity.position, entity.name)
         entity.destroy()
     end
-    if not is_void(surface, x, y) then return end
+    if not is_void(surface, x, y) then return false end
 
     local seed = surface.map_gen_settings.seed
     if is_water_spot(seed, x, y) then
         flood_water(surface, seed, x, y)
-        return
+        return false
     end
     surface.set_tiles({ { name = floor_tile(seed, x, y), position = { x, y } } })
     if not skip_vein then
         ore_veins.materialize(surface, x, y, force)
     end
-    -- Caverns are pre-stabilized natural caves: carved tiles add NO reveal
-    -- stress. Big rooms used to cross the collapse threshold during carving,
-    -- fill with grace-plug rocks, and then collapse wholesale when a plug was
-    -- mined — clearing nest rooms via physics instead of fighting. Player
-    -- digs at a cavern's edge still follow normal stress rules.
+    return true
 end
 
 -- Advance the frontier around freshly opened tiles: void within TWO steps of

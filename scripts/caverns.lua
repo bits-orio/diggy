@@ -48,19 +48,24 @@ local ROOM_TYPES = {
     { kind = "sanctuary", min_depth = 180, weight = 8 },
 }
 
--- Carving delegates to world.carve_tile (entity removal + void→floor + vein)
--- and records each tile so the frontier can be advanced around the cavern.
-local function carve_tile(surface, x, y, force, carved, skip_vein)
-    world.carve_tile(surface, x, y, force, skip_vein)
+-- Carving delegates to world.carve_tile (entity removal + void→floor + vein),
+-- records each tile for frontier advance, and separately records tiles that
+-- actually OPENED (void→floor) — only those owe ceiling debt; overlap with
+-- already-open space must never double-charge (it once stacked cells to 9+,
+-- beyond any pillar's reach).
+local function carve_tile(surface, x, y, force, carved, skip_vein, opened)
+    if world.carve_tile(surface, x, y, force, skip_vein) and opened then
+        opened[#opened + 1] = { x, y }
+    end
     carved[#carved + 1] = { x, y }
 end
 
-local function carve_disc(surface, cx, cy, radius, force, carved, skip_vein)
+local function carve_disc(surface, cx, cy, radius, force, carved, skip_vein, opened)
     for x = cx - radius, cx + radius do
         for y = cy - radius, cy + radius do
             local dx, dy = x - cx, y - cy
             if dx * dx + dy * dy <= radius * radius then
-                carve_tile(surface, x, y, force, carved, skip_vein)
+                carve_tile(surface, x, y, force, carved, skip_vein, opened)
             end
         end
     end
@@ -136,18 +141,16 @@ local function populate_sanctuary(surface, cx, cy, radius, seed)
     end
 end
 
--- Activate a room's collapse mechanics: load its deferred stress; if the
--- ceiling is failing, start the 15-second countdown toward a sparse cave-in.
+-- Arm a room: its ceiling debt was already loaded at breach (suppressed by
+-- the worms' protection), so arming just EVALUATES the live stress map —
+-- pillars placed any time since the breach have been subtracting honestly,
+-- and a pre-pillared room simply holds. No stress dump happens here.
 local function arm_room(room)
     local surface = game.surfaces[room.surface_index]
     if not surface or not surface.valid then return end
     room.protected = false
 
-    -- Slightly under full reveal stress: bare big rooms still fail, but the
-    -- deficit is small enough that pillars placed during the countdown can
-    -- realistically push the ceiling back under threshold.
-    local hot = collapse.arm_area(surface, room.tiles, 0.9)
-    room.tiles = nil -- no longer needed; don't bloat the save
+    local hot = collapse.hot_cells(surface, room.cx, room.cy, room.radius + 2)
     if #hot == 0 then return end
 
     local force = game.forces[room.force_index] or game.forces.player
@@ -183,12 +186,18 @@ local function make_room(surface, cx, cy, seed, force, carved)
         end
     end
 
-    -- Room tiles are tracked separately: they carry the cavern's deferred
-    -- stress, loaded when the room arms.
-    local room_tiles = {}
     -- Sanctuaries replace terrain, so veins would end up under water; skip them.
-    carve_disc(surface, cx, cy, radius, force, room_tiles, picked.kind == "sanctuary")
+    local room_tiles, opened = {}, {}
+    carve_disc(surface, cx, cy, radius, force, room_tiles, picked.kind == "sanctuary", opened)
     for _, t in pairs(room_tiles) do carved[#carved + 1] = t end
+
+    -- The room's ceiling debt is loaded NOW, trigger-suppressed (the worms'
+    -- protection keeps it dormant), charged ONLY for tiles this room actually
+    -- opened: overlap with halls or other rooms never double-counts, so the
+    -- open-ceiling load stays capped at ~4 and pillars can always reach it.
+    if picked.kind ~= "sanctuary" then
+        collapse.arm_area(surface, opened, 0.9)
+    end
 
     local worm_ids = {}
     if picked.kind == "nest" then
@@ -214,7 +223,6 @@ local function make_room(surface, cx, cy, seed, force, carved)
             cy = cy,
             radius = radius,
             force_index = force and force.index or game.forces.player.index,
-            tiles = room_tiles,
             worms = #worm_ids,
             protected = #worm_ids > 0,
         }

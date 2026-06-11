@@ -486,6 +486,25 @@ end
 -- on the player's surface down to a calm value (default 3.0, override via
 -- /diggy-vent <value>). Run it AFTER clearing old plug rubble — digging
 -- pre-fix plugs still injects their never-registered support.
+-- Cells over the collapse threshold within a disc (cavern arming evaluates
+-- the live map — no stress is added at arming anymore).
+function collapse.hot_cells(surface, cx, cy, radius)
+    local map = storage.stress[surface.index] or {}
+    local hot = {}
+    for x = cx - radius, cx + radius, 2 do
+        for y = cy - radius, cy + radius, 2 do
+            local kx, ky = 2 * math.floor(x * 0.5), 2 * math.floor(y * 0.5)
+            local v = map[cell_key(kx, ky)] or 0
+            if v > STRESS_THRESHOLD then
+                hot[cell_key(kx, ky)] = { x = kx, y = ky }
+            end
+        end
+    end
+    local list = {}
+    for _, c in pairs(hot) do list[#list + 1] = c end
+    return list
+end
+
 function collapse.vent_surface(surface, target)
     local map = storage.stress[surface.index] or {}
     local vented = 0

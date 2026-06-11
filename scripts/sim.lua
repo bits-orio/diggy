@@ -26,6 +26,58 @@ local function slog(s, message)
     log(string.format("[DIGGY-SIM] t=%d mode=%s %s", game.tick, s.bare and "bare" or "pillared", message))
 end
 
+-- ── Evidence: every run archives artifacts under script-output/<run_id>/ ──
+
+-- Region dump: per tile "x,y,cell_stress,code" (#void ~water .floor W/R/T).
+local function dump_stress(s, stage)
+    local surface = game.surfaces[s.surface_index]
+    local map = storage.stress[s.surface_index] or {}
+    local out = {}
+    for y = s.y1 - 8, s.y1 + SIZE + 8 do
+        for x = s.x1 - 8, s.x1 + SIZE + 8 do
+            local cx, cy = 2 * math.floor(x * 0.5), 2 * math.floor(y * 0.5)
+            local v = map[cx .. "," .. cy] or 0
+            local t = surface.get_tile(x, y)
+            local code = "."
+            if not t.valid or t.name == "out-of-map" then
+                code = "#"
+            elseif t.name:find("water", 1, true) then
+                code = "~"
+            end
+            local box = { { x + 0.05, y + 0.05 }, { x + 0.95, y + 0.95 } }
+            if surface.count_entities_filtered { name = "stone-wall", area = box } > 0 then
+                code = "W"
+            elseif surface.count_entities_filtered { name = "diggy-rock", area = box } > 0 then
+                code = "R"
+            elseif surface.count_entities_filtered { name = "diggy-tree", area = box } > 0 then
+                code = "T"
+            end
+            out[#out + 1] = x .. "," .. y .. "," .. string.format("%.2f", v) .. "," .. code
+        end
+    end
+    helpers.write_file(s.run_id .. "/stress-" .. stage .. ".csv", table.concat(out, "\n"))
+end
+
+-- Real screenshot when a renderer exists (graphical client); silent no-op
+-- headless. Centered on the hall, zoomed to include the surroundings.
+local function shoot(s, stage)
+    pcall(game.take_screenshot, {
+        surface = game.surfaces[s.surface_index],
+        position = { s.x1 + SIZE / 2, s.y1 + SIZE / 2 },
+        resolution = { 1280, 1280 },
+        zoom = 0.55,
+        path = s.run_id .. "/shot-" .. stage .. ".png",
+        show_entity_info = true,
+        daytime = 0,
+        water_tick = 0,
+    })
+end
+
+local function archive(s, stage)
+    dump_stress(s, stage)
+    shoot(s, stage)
+end
+
 -- player is optional: headless callers (diggy-v1 debug_sim) anchor at spawn.
 function sim.start(player, bare)
     if storage.sim then
@@ -53,8 +105,10 @@ function sim.start(player, bare)
         started_tick = game.tick,
         collapses_at_start = total_collapses(),
         last_log = game.tick,
+        run_id = string.format("diggy-sim-%s-t%d", bare and "bare" or "pillared", game.tick),
     }
-    slog(storage.sim, string.format("start region=(%d,%d)..(%d,%d) pre-vented=%d cells", x1, y1, x1 + SIZE, y1 + SIZE, vented))
+    slog(storage.sim, string.format("start region=(%d,%d)..(%d,%d) pre-vented=%d cells artifacts=script-output/%s/", x1, y1, x1 + SIZE, y1 + SIZE, vented, storage.sim.run_id))
+    archive(storage.sim, "start")
     if player then player.print({ "diggy.sim-started", bare and "bare" or "pillared" }) end
 end
 
@@ -80,7 +134,13 @@ local function finish(s, aborted)
     else
         verdict = (collapses == 0 and maxv < 3.57) and "PASS" or "FAIL"
     end
-    slog(s, "finish " .. status(s, surface) .. " verdict=" .. verdict)
+    local summary = "finish " .. status(s, surface) .. " verdict=" .. verdict
+    slog(s, summary)
+    archive(s, "end")
+    helpers.write_file(s.run_id .. "/summary.txt",
+        string.format("run=%s\nmode=%s\nregion=(%d,%d)..(%d,%d)\n%s\nduration_s=%d\n",
+            s.run_id, s.bare and "bare" or "pillared", s.x1, s.y1, s.x1 + SIZE, s.y1 + SIZE,
+            summary, math.floor((game.tick - s.started_tick) / 60)))
     local player = s.player_index and game.get_player(s.player_index)
     if player then
         player.print({ "diggy.sim-finished", verdict, s.dug,
