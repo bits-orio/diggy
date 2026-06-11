@@ -12,6 +12,8 @@ local treasure = require("scripts.treasure")
 local caverns = require("scripts.caverns")
 local charting = require("scripts.charting")
 local install_guard = require("scripts.install_guard")
+local admin_kit = require("scripts.admin_kit")
+local sim = require("scripts.sim")
 
 -- No crashed spaceship in a cave: disable freeplay's crash site and intro.
 -- (Mods init before the freeplay scenario reads these flags.)
@@ -115,6 +117,9 @@ end
 -- specs; rolls are seed-keyed like everything else.
 remote.add_interface("diggy-v1", {
     register_threat = threats.register_external,
+    -- Headless test hooks (used by the maintainer's automated benchmarks).
+    debug_sim = function(bare) sim.start(nil, bare) end,
+    debug_sim_stop = function() sim.stop(nil) end,
 })
 
 -- Covers dig; other support entities (walls, reactors) feed the stress map.
@@ -205,8 +210,6 @@ script.on_nth_tick(30, function()
     caverns.on_heartbeat()
 end)
 
-local admin_kit = require("scripts.admin_kit")
-local sim = require("scripts.sim")
 
 commands.add_command("diggy-sim", { "diggy.command-sim" }, function(event)
     local player = event.player_index and game.get_player(event.player_index)

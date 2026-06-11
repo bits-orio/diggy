@@ -1,13 +1,20 @@
--- Repeatable in-game test scenario (/diggy-sim): clears a fixed 30x30 hall
--- east of the player at a steady pace (so grace timers and collapse delays
--- behave like real play), pillaring a 3-tile-gap stone-wall grid as it goes —
--- the same benchmark the headless tests use. "/diggy-sim bare" skips the
--- pillars (expect collapses); "/diggy-sim stop" aborts and reports.
+-- Self-contained repeatable benchmark (/diggy-sim [bare|stop]):
+--   1. vents the surface to a clean 2.0 baseline,
+--   2. clears a 32x32 hall east of the player at 4 digs/tick (real-time
+--      pacing so grace timers and collapse delays behave like play),
+--   3. maintains an EXACT square stone-wall lattice with 3-tile gaps
+--      (anchor snapped to the lattice, walls force-placed on-point — no
+--      find_non_colliding drift, idempotent across reruns),
+--   4. logs progress to factorio-current.log every 2 seconds and prints a
+--      PASS/FAIL verdict at the end (pillared mode passes on zero collapses).
+local collapse = require("scripts.collapse")
+
 local sim = {}
 
 local DIGS_PER_TICK = 4
-local W, H = 30, 30
-local LIMIT = 1500
+local LOG_EVERY = 120
+local SIZE = 32 -- multiple of 4; lattice points at +2 step 4
+local LIMIT = 1600
 
 local function total_collapses()
     local count = 0
@@ -15,45 +22,71 @@ local function total_collapses()
     return count
 end
 
+local function slog(s, message)
+    log(string.format("[DIGGY-SIM] t=%d mode=%s %s", game.tick, s.bare and "bare" or "pillared", message))
+end
+
+-- player is optional: headless callers (diggy-v1 debug_sim) anchor at spawn.
 function sim.start(player, bare)
     if storage.sim then
-        player.print({ "diggy.sim-already-running" })
+        if player then player.print({ "diggy.sim-already-running" }) end
         return
     end
-    local p = player.position
+    local surface = player and player.surface or game.surfaces["nauvis"]
+    local p = player and player.position or { x = 12, y = 0 }
+    local x1 = math.floor(p.x) + 4
+    local y1 = math.floor(p.y) - SIZE / 2
+    -- Snap the anchor so the lattice lands identically on reruns.
+    x1 = x1 - (x1 % 4)
+    y1 = y1 - (y1 % 4)
+
+    local vented = collapse.vent_surface(surface, 2.0)
+
     storage.sim = {
-        surface_index = player.surface.index,
-        x1 = math.floor(p.x) + 4,
-        y1 = math.floor(p.y) - H / 2,
-        player_index = player.index,
-        force_name = player.force.name,
+        surface_index = surface.index,
+        x1 = x1,
+        y1 = y1,
+        player_index = player and player.index or nil,
+        force_name = player and player.force.name or "player",
         bare = bare or false,
         dug = 0,
         started_tick = game.tick,
         collapses_at_start = total_collapses(),
+        last_log = game.tick,
     }
-    player.print({ "diggy.sim-started", bare and "bare" or "pillared" })
+    slog(storage.sim, string.format("start region=(%d,%d)..(%d,%d) pre-vented=%d cells", x1, y1, x1 + SIZE, y1 + SIZE, vented))
+    if player then player.print({ "diggy.sim-started", bare and "bare" or "pillared" }) end
+end
+
+local function status(s, surface)
+    return string.format("dug=%d collapses=%d max_stress=%.2f walls=%d",
+        s.dug,
+        total_collapses() - s.collapses_at_start,
+        collapse.max_in_area(surface, s.x1, s.y1, s.x1 + SIZE, s.y1 + SIZE),
+        surface.count_entities_filtered { name = "stone-wall", area = { { s.x1, s.y1 }, { s.x1 + SIZE, s.y1 + SIZE } } })
 end
 
 local function finish(s, aborted)
     storage.sim = nil
-    local player = game.get_player(s.player_index)
-    if not player then return end
-    local map = storage.stress[s.surface_index] or {}
-    local maxv = -99
-    for x = s.x1, s.x1 + W, 2 do
-        for y = s.y1, s.y1 + H, 2 do
-            local v = map[(2 * math.floor(x * 0.5)) .. "," .. (2 * math.floor(y * 0.5))] or 0
-            if v > maxv then maxv = v end
-        end
+    local surface = game.surfaces[s.surface_index]
+    if not surface or not surface.valid then return end
+    local collapses = total_collapses() - s.collapses_at_start
+    local maxv = collapse.max_in_area(surface, s.x1, s.y1, s.x1 + SIZE, s.y1 + SIZE)
+    local verdict
+    if aborted then
+        verdict = "ABORTED"
+    elseif s.bare then
+        verdict = collapses > 0 and "PASS (bare mode collapsed, as expected)" or "FAIL (bare mode survived?)"
+    else
+        verdict = (collapses == 0 and maxv < 3.57) and "PASS" or "FAIL"
     end
-    player.print({ "diggy.sim-finished",
-        aborted and "aborted" or "done",
-        s.dug,
-        total_collapses() - s.collapses_at_start,
-        string.format("%.2f", maxv),
-        math.floor((game.tick - s.started_tick) / 60),
-    })
+    slog(s, "finish " .. status(s, surface) .. " verdict=" .. verdict)
+    local player = s.player_index and game.get_player(s.player_index)
+    if player then
+        player.print({ "diggy.sim-finished", verdict, s.dug,
+            collapses, string.format("%.2f", maxv),
+            math.floor((game.tick - s.started_tick) / 60) })
+    end
 end
 
 function sim.stop(player)
@@ -73,16 +106,19 @@ function sim.step()
         storage.sim = nil
         return
     end
-    local x2, y2 = s.x1 + W, s.y1 + H
+    local x2, y2 = s.x1 + SIZE, s.y1 + SIZE
 
-    -- One scan per tick; dig the best few candidates from it.
+    -- One scan per tick; dig the best candidates (burrow toward the region,
+    -- then sweep it west to east).
     local candidates = {}
+    local in_region = 0
     for _, r in pairs(surface.find_entities_filtered { name = { "diggy-rock", "diggy-tree" } }) do
         if r.valid then
             local p = r.position
             local d
             if p.x >= s.x1 and p.x <= x2 and p.y >= s.y1 and p.y <= y2 then
-                d = (p.x - s.x1) * 100 + math.abs(p.y - (s.y1 + H / 2))
+                d = (p.x - s.x1) * 100 + math.abs(p.y - (s.y1 + SIZE / 2))
+                in_region = in_region + 1
             else
                 local dx = math.max(s.x1 - p.x, 0, p.x - x2)
                 local dy = math.max(s.y1 - p.y, 0, p.y - y2)
@@ -93,40 +129,52 @@ function sim.step()
     end
     table.sort(candidates, function(a, b) return a[2] < b[2] end)
 
-    for i = 1, math.min(DIGS_PER_TICK, #candidates) do
-        local entry = candidates[i]
-        if entry[2] >= 2000000 then
+    -- The hall is done when its interior holds no more wall: stop digging
+    -- (never eat the boundary outward), let pending collapses resolve for a
+    -- few seconds, then judge.
+    if s.region_seen and in_region == 0 then
+        if not s.settle_until then
+            s.settle_until = game.tick + 300
+            slog(s, "region clear — settling " .. status(s, surface))
+        elseif game.tick >= s.settle_until then
             finish(s)
             return
         end
-        if entry[1].valid then
-            entry[1].die(s.force_name)
-            s.dug = s.dug + 1
-            if s.dug >= LIMIT then
-                finish(s)
-                return
+    elseif #candidates == 0 then
+        finish(s)
+        return
+    else
+        for i = 1, math.min(DIGS_PER_TICK, #candidates) do
+            local entry = candidates[i]
+            if entry[1].valid then
+                if entry[2] < 1000000 then s.region_seen = true end
+                entry[1].die(s.force_name)
+                s.dug = s.dug + 1
+                if s.dug >= LIMIT then
+                    finish(s)
+                    return
+                end
             end
         end
     end
-    if #candidates == 0 then
-        finish(s)
-        return
-    end
 
-    -- Pillar pass: keep the 3-tile-gap grid current on freshly opened floor.
+    -- Exact lattice: walls go on the snapped grid points, force-placed
+    -- (script placement ignores collision, so nothing drifts off-grid).
     if not s.bare then
         for x = s.x1 + 2, x2 - 2, 4 do
             for y = s.y1 + 2, y2 - 2, 4 do
                 local tile = surface.get_tile(x, y)
                 if tile.valid and tile.name ~= "out-of-map" and not tile.name:find("water", 1, true)
-                    and surface.count_entities_filtered { name = "stone-wall", position = { x + 0.5, y + 0.5 }, radius = 1 } == 0 then
-                    local spot = surface.find_non_colliding_position("stone-wall", { x + 0.5, y + 0.5 }, 1, 0.5)
-                    if spot then
-                        surface.create_entity { name = "stone-wall", position = spot, force = s.force_name, raise_built = true }
-                    end
+                    and surface.count_entities_filtered { name = { "stone-wall", "diggy-rock", "diggy-tree" }, position = { x + 0.5, y + 0.5 }, radius = 0.4 } == 0 then
+                    surface.create_entity { name = "stone-wall", position = { x + 0.5, y + 0.5 }, force = s.force_name, raise_built = true }
                 end
             end
         end
+    end
+
+    if game.tick - s.last_log >= LOG_EVERY then
+        s.last_log = game.tick
+        slog(s, status(s, surface))
     end
 end
 

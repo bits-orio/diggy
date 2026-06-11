@@ -486,9 +486,8 @@ end
 -- on the player's surface down to a calm value (default 3.0, override via
 -- /diggy-vent <value>). Run it AFTER clearing old plug rubble — digging
 -- pre-fix plugs still injects their never-registered support.
-function collapse.vent(player, target)
-    target = target or 3.0
-    local map = storage.stress[player.surface.index] or {}
+function collapse.vent_surface(surface, target)
+    local map = storage.stress[surface.index] or {}
     local vented = 0
     for key, value in pairs(map) do
         if value > target then
@@ -496,7 +495,26 @@ function collapse.vent(player, target)
             vented = vented + 1
         end
     end
+    return vented
+end
+
+function collapse.vent(player, target)
+    target = target or 3.0
+    local vented = collapse.vent_surface(player.surface, target)
     player.print({ "diggy.stress-vented", vented, string.format("%.1f", target) })
+end
+
+-- Max stress cell within a tile-coordinate box (diagnostics/sim).
+function collapse.max_in_area(surface, x1, y1, x2, y2)
+    local map = storage.stress[surface.index] or {}
+    local maxv = 0
+    for x = x1, x2, 2 do
+        for y = y1, y2, 2 do
+            local v = map[cell_key(2 * math.floor(x * 0.5), 2 * math.floor(y * 0.5))] or 0
+            if v > maxv then maxv = v end
+        end
+    end
+    return maxv
 end
 
 -- The only timer in the mod: a 0.5s heartbeat that fires pending collapses
