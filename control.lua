@@ -29,6 +29,21 @@ end)
 script.on_configuration_changed(function()
     if not storage.stress then collapse.on_init() end
     storage.support_reach = storage.support_reach or {}
+
+    -- Saves store runtime settings, so defaults shipped by old releases stick
+    -- forever. Rebase saves still on the exact old shipped defaults (the
+    -- "every rock spawns biters" era) to the current ones; custom values are
+    -- left untouched.
+    local rebase = {
+        ["diggy-dig-biter-chance"] = { old = { [1.0] = true, [0.1] = true }, new = 0.015 },
+        ["diggy-dig-nest-chance"] = { old = { [0.1] = true, [0.01] = true }, new = 0.002 },
+    }
+    for name, r in pairs(rebase) do
+        if r.old[settings.global[name].value] then
+            settings.global[name] = { value = r.new }
+            game.print({ "diggy.setting-rebased", { "mod-setting-name." .. name }, tostring(r.new) })
+        end
+    end
 end)
 
 local COVER = { ["diggy-rock"] = true, ["diggy-tree"] = true }
