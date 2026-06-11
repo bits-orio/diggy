@@ -5,6 +5,7 @@
 local Simplex = require("scripts.lib.simplex")
 local hash = require("scripts.lib.hash")
 local ore_veins = require("scripts.ore_veins")
+local collapse = require("scripts.collapse")
 
 local world = {}
 
@@ -83,11 +84,9 @@ local function make_wall(surface, seed, x, y)
     end
     surface.set_tiles({ { name = floor_tile(seed, x, y), position = { x, y } } })
     local tree = Simplex.d2(x * TREES.scale, y * TREES.scale, seed + TREES.seed) > TREES.threshold
-    surface.create_entity {
-        name = tree and "diggy-tree" or "diggy-rock",
-        position = { x + 0.5, y + 0.5 },
-        force = "neutral",
-    }
+    local name = tree and "diggy-tree" or "diggy-rock"
+    surface.create_entity { name = name, position = { x + 0.5, y + 0.5 }, force = "neutral" }
+    collapse.support_added(surface, { x = x + 0.5, y = y + 0.5 }, name)
 end
 
 -- Carve a tile fully open (cavern carving): removes any wall entity, opens
@@ -99,6 +98,8 @@ function world.carve_tile(surface, x, y, force, skip_vein)
         name = { "diggy-rock", "diggy-tree" },
         area = { { x + 0.05, y + 0.05 }, { x + 0.95, y + 0.95 } },
     }) do
+        -- destroy() raises no events, so hand the support back explicitly.
+        collapse.support_removed(surface, entity.position, entity.name)
         entity.destroy()
     end
     if not is_void(surface, x, y) then return end
@@ -112,6 +113,9 @@ function world.carve_tile(surface, x, y, force, skip_vein)
     if not skip_vein then
         ore_veins.materialize(surface, x, y, force)
     end
+    -- Carved space stresses the ceiling like any reveal, but with the fresh-
+    -- tile grace so rooms open up instead of instantly caving in.
+    collapse.tile_revealed(surface, x, y)
 end
 
 -- Advance the frontier around freshly opened tiles: every adjacent void tile
@@ -130,6 +134,11 @@ function world.advance_frontier(surface, tiles)
 end
 
 function world.on_dig(dig)
+    -- Original stress model per dig: the dug wall's support is gone (+2
+    -- blurred), the opened tile stresses the ceiling (+1 blurred, with grace),
+    -- and any new wall spawned by the frontier advance subtracts its support.
+    collapse.support_removed(dig.surface, dig.position, dig.name, dig.player_index)
+    collapse.tile_revealed(dig.surface, math.floor(dig.position.x), math.floor(dig.position.y), dig.player_index)
     world.advance_frontier(dig.surface, { { math.floor(dig.position.x), math.floor(dig.position.y) } })
 end
 
@@ -149,6 +158,9 @@ function build_chunk(surface, area)
             local d_sq = x * x + y * y
             if d_sq > carve_sq then
                 tiles[#tiles + 1] = { name = "out-of-map", position = { x, y } }
+            elseif x >= 5 and x <= 7 and y >= -1 and y <= 1 then
+                -- Starter water hole: a guaranteed 3x3 pool near the origin.
+                tiles[#tiles + 1] = { name = "water", position = { x, y } }
             else
                 tiles[#tiles + 1] = { name = floor_tile(seed, x, y), position = { x, y } }
                 if d_sq > ring_sq then
@@ -163,11 +175,11 @@ function build_chunk(surface, area)
     surface.set_tiles(tiles)
     for _, w in pairs(walls) do
         local tree = Simplex.d2(w[1] * TREES.scale, w[2] * TREES.scale, seed + TREES.seed) > TREES.threshold
-        surface.create_entity {
-            name = tree and "diggy-tree" or "diggy-rock",
-            position = { w[1] + 0.5, w[2] + 0.5 },
-            force = "neutral",
-        }
+        local name = tree and "diggy-tree" or "diggy-rock"
+        surface.create_entity { name = name, position = { w[1] + 0.5, w[2] + 0.5 }, force = "neutral" }
+        -- Ring walls register as supports (the original "stress-hacked" its
+        -- starting ring) so digging them out later is stress-neutral.
+        collapse.support_added(surface, { x = w[1] + 0.5, y = w[2] + 0.5 }, name)
     end
     for _, o in pairs(ores) do
         surface.create_entity {

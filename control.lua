@@ -1,4 +1,5 @@
 local world = require("scripts.world")
+local collapse = require("scripts.collapse")
 local dig_tracker = require("scripts.dig_tracker")
 local dig_spawner = require("scripts.dig_spawner")
 local dig_yield = require("scripts.dig_yield")
@@ -11,6 +12,7 @@ local install_guard = require("scripts.install_guard")
 script.on_init(function()
     dig_tracker.on_init()
     charting.on_init()
+    collapse.on_init()
     install_guard.on_init()
     -- Guard first: on a mid-save install the world conversion must not run,
     -- or it would void an existing base.
@@ -20,9 +22,15 @@ script.on_init(function()
     dig_spawner.apply_expansion_setting()
 end)
 
--- A dig is the death/mining of any cover entity (rock or tree). Snapshot the
--- context up front: handlers may invalidate the dying entity as a side effect
--- (e.g. creating entities at its tile), so none of them touch it directly.
+script.on_configuration_changed(function()
+    if not storage.stress then collapse.on_init() end
+end)
+
+local COVER = { ["diggy-rock"] = true, ["diggy-tree"] = true }
+
+-- A dig is the death/mining of a cover entity. Snapshot the context up front:
+-- handlers may invalidate the dying entity as a side effect, so none of them
+-- touch it directly.
 local function on_dig(event)
     local entity = event.entity
     local force = event.force
@@ -32,11 +40,12 @@ local function on_dig(event)
     local dig = {
         surface = entity.surface,
         position = entity.position,
+        name = entity.name,
         force = force,
         player_index = event.player_index,
     }
     dig_tracker.on_dig(dig)
-    world.on_dig(dig)
+    world.on_dig(dig) -- stress + frontier advance
     ore_veins.on_dig(dig)
     treasure.on_dig(dig)
     dig_spawner.on_dig(dig)
@@ -44,15 +53,55 @@ local function on_dig(event)
     charting.on_dig(dig)
 end
 
-local cover_filter = {
-    { filter = "name", name = "diggy-rock" },
-    { filter = "name", name = "diggy-tree" },
+-- Covers dig; other support entities (walls, reactors) feed the stress map.
+local removal_filter = {}
+for _, name in pairs(collapse.SUPPORT_NAMES) do
+    removal_filter[#removal_filter + 1] = { filter = "name", name = name }
+end
+
+local function on_removed(event)
+    local entity = event.entity
+    if COVER[entity.name] then
+        if event.buffer then
+            dig_yield.on_player_mined(event)
+        end
+        on_dig(event)
+    else
+        collapse.support_removed(entity.surface, entity.position, entity.name, event.player_index)
+    end
+end
+
+script.on_event(defines.events.on_player_mined_entity, on_removed, removal_filter)
+script.on_event(defines.events.on_robot_mined_entity, on_removed, removal_filter)
+script.on_event(defines.events.on_entity_died, on_removed, removal_filter)
+
+local support_filter = {
+    { filter = "name", name = "stone-wall" },
+    { filter = "name", name = "nuclear-reactor" },
 }
-script.on_event(defines.events.on_player_mined_entity, function(event)
-    dig_yield.on_player_mined(event)
-    on_dig(event)
-end, cover_filter)
-script.on_event(defines.events.on_entity_died, on_dig, cover_filter)
+local function on_built(event)
+    local entity = event.entity
+    collapse.support_added(entity.surface, entity.position, entity.name)
+end
+script.on_event(defines.events.on_built_entity, on_built, support_filter)
+script.on_event(defines.events.on_robot_built_entity, on_built, support_filter)
+script.on_event(defines.events.script_raised_built, on_built, support_filter)
+script.on_event(defines.events.script_raised_revive, on_built, support_filter)
+
+script.on_event(defines.events.on_player_built_tile, function(event)
+    collapse.on_built_tile(game.surfaces[event.surface_index], event.tile, event.tiles)
+end)
+script.on_event(defines.events.on_robot_built_tile, function(event)
+    collapse.on_built_tile(event.robot.surface, event.tile, event.tiles)
+end)
+script.on_event(defines.events.on_player_mined_tile, function(event)
+    collapse.on_mined_tile(game.surfaces[event.surface_index], event.tiles, event.player_index)
+end)
+script.on_event(defines.events.on_robot_mined_tile, function(event)
+    collapse.on_mined_tile(event.robot.surface, event.tiles)
+end)
+
+script.on_nth_tick(30, collapse.on_heartbeat)
 
 script.on_event(defines.events.on_chunk_generated, world.on_chunk_generated)
 script.on_event(defines.events.on_chunk_charted, world.on_chunk_charted)
