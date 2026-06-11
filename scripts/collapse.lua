@@ -449,6 +449,51 @@ function collapse.sparse_collapse(surface, cells, force, seed)
     return rocks
 end
 
+-- Debug overlay (the original's enable_stress_grid, on demand): paints every
+-- stress cell around the player for 10 seconds, green through red.
+function collapse.debug_overlay(player)
+    local surface = player.surface
+    local map = storage.stress[surface.index] or {}
+    local px, py = math.floor(player.position.x), math.floor(player.position.y)
+    local shown = 0
+    for x = px - 40, px + 40, 2 do
+        for y = py - 40, py + 40, 2 do
+            local cx, cy = 2 * math.floor(x * 0.5), 2 * math.floor(y * 0.5)
+            local value = map[cell_key(cx, cy)]
+            if value and (value > 0.05 or value < -0.05) then
+                local t = math.min(math.max(value / STRESS_THRESHOLD, 0), 1)
+                rendering.draw_text {
+                    text = string.format("%.1f", value),
+                    surface = surface,
+                    target = { cx + 1, cy + 1 },
+                    color = value < 0 and { r = 0.4, g = 0.7, b = 1 }
+                        or { r = t, g = 1 - t, b = 0 },
+                    scale = 0.8,
+                    alignment = "center",
+                    time_to_live = 600,
+                    players = { player.index },
+                }
+                shown = shown + 1
+            end
+        end
+    end
+    player.print({ "diggy.stress-overlay", shown })
+end
+
+-- One-time amnesty for saves poisoned by the pre-fix plug ratchet: clamp
+-- every cell on the player's surface down to a calm value.
+function collapse.vent(player)
+    local map = storage.stress[player.surface.index] or {}
+    local vented = 0
+    for key, value in pairs(map) do
+        if value > 3.0 then
+            map[key] = 3.0
+            vented = vented + 1
+        end
+    end
+    player.print({ "diggy.stress-vented", vented })
+end
+
 -- The only timer in the mod: a 0.5s heartbeat that fires pending collapses
 -- (the original used a task scheduler for the same 2.5s delay).
 function collapse.on_heartbeat()

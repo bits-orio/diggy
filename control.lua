@@ -205,6 +205,20 @@ script.on_nth_tick(30, function()
     caverns.on_heartbeat()
 end)
 
+commands.add_command("diggy-stress", { "diggy.command-stress" }, function(event)
+    local player = event.player_index and game.get_player(event.player_index)
+    if player then collapse.debug_overlay(player) end
+end)
+commands.add_command("diggy-vent", { "diggy.command-vent" }, function(event)
+    local player = event.player_index and game.get_player(event.player_index)
+    if not player then return end
+    if not player.admin then
+        player.print({ "diggy.admin-only" })
+        return
+    end
+    collapse.vent(player)
+end)
+
 -- Pop-text animation: per tick, but a single table check when nothing is
 -- animating (countdowns are the only spawner today).
 script.on_event(defines.events.on_tick, function(event)
