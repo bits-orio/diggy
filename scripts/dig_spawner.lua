@@ -8,7 +8,7 @@ local hash = require("scripts.lib.hash")
 local dig_spawner = {}
 
 -- No hostiles shallower than this; the carve-out and early base stay calm.
-local PEACEFUL_DEPTH = 60
+local PEACEFUL_DEPTH = 75
 -- Nests stay sparse: at most this many spawners within the cap radius.
 local NEST_CAP, NEST_CAP_RADIUS = 2, 40
 
@@ -32,12 +32,15 @@ function dig_spawner.tier_for(evolution)
 end
 local tier_for = dig_spawner.tier_for
 
--- Packs, not singles: rare ambushes (defaults ~1 in 65 digs), but when one
--- hits it's a group, growing with depth and the team's evolution.
+-- Packs, not singles: rare ambushes (defaults ~1 in 65 digs) that start right
+-- past the peaceful radius and grow steadily with depth until the size cap
+-- (reached around depth 600) — beyond that, evolution carries the difficulty
+-- (stronger tiers plus a modest pack bonus).
 local function pack_bounds(depth, evolution)
-    local min_pack = 2 + math.floor(depth / 150)
-    local max_pack = 4 + math.floor(depth / 80) + math.floor(evolution * 8)
-    return math.min(min_pack, 10), math.min(max_pack, 20)
+    local progress = math.max(depth - PEACEFUL_DEPTH, 0)
+    local min_pack = math.min(2 + math.floor(progress / 130), 8)
+    local max_pack = math.min(3 + math.floor(progress / 55), 12) + math.floor(evolution * 8)
+    return min_pack, math.min(max_pack, 20)
 end
 
 local function spawn_units(surface, position, tier, seed, x, y)

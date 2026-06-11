@@ -16,6 +16,7 @@ local FIRST_MODIFIER, LAST_MODIFIER = 0.2, 1.0
 
 local technologies = {}
 local tier = 0
+local cumulative = 0
 for group_index, group in ipairs(GROUPS) do
     for step = 1, group.steps do
         tier = tier + 1
@@ -34,17 +35,21 @@ for group_index, group in ipairs(GROUPS) do
         end
 
         local modifier = FIRST_MODIFIER + (LAST_MODIFIER - FIRST_MODIFIER) * (tier - 1) / (TOTAL_TIERS - 1)
+        modifier = math.floor(modifier * 100 + 0.5) / 100
+        cumulative = cumulative + modifier
 
         technologies[#technologies + 1] = {
             type = "technology",
             name = "diggy-dig-speed-" .. tier,
             localised_name = { "", { "technology-name.diggy-dig-speed" }, " " .. tier },
-            localised_description = { "technology-description.diggy-dig-speed" },
+            localised_description = { "technology-description.diggy-dig-speed-exact",
+                tostring(math.floor(modifier * 100 + 0.5)),
+                tostring(math.floor(cumulative * 100 + 0.5)) },
             icons = {
                 { icon = "__base__/graphics/technology/steel-axe.png", icon_size = 256 },
             },
             effects = {
-                { type = "character-mining-speed", modifier = math.floor(modifier * 100 + 0.5) / 100 },
+                { type = "character-mining-speed", modifier = modifier },
             },
             prerequisites = prerequisites,
             unit = {
@@ -86,12 +91,14 @@ for tier, def in ipairs(SUPPORT_TIERS) do
         type = "technology",
         name = "diggy-support-reach-" .. tier,
         localised_name = { "", { "technology-name.diggy-support-reach" }, " " .. tier },
-        localised_description = { "technology-description.diggy-support-reach" },
+        localised_description = { "technology-description.diggy-support-reach-exact",
+            tostring(3 + tier), tostring(4 + tier) },
         icons = {
             { icon = "__base__/graphics/technology/stone-wall.png", icon_size = 256 },
         },
         effects = {
-            { type = "nothing", effect_description = { "technology-effect.diggy-support-reach" } },
+            { type = "nothing", effect_description = { "technology-effect.diggy-support-reach-exact",
+                tostring(3 + tier), tostring(4 + tier) } },
         },
         prerequisites = prerequisites,
         unit = {
