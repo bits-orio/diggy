@@ -1,3 +1,4 @@
+local mts = require("scripts.mts")
 local world = require("scripts.world")
 local collapse = require("scripts.collapse")
 local dig_tracker = require("scripts.dig_tracker")
@@ -36,6 +37,11 @@ local function on_dig(event)
     local force = event.force
     if not force and event.player_index then
         force = game.get_player(event.player_index).force
+    end
+    if not force or force.name == "neutral" or force.name == "enemy" then
+        -- Player-less digs (fire, biters chewing the wall): attribute to the
+        -- surface's owning team under MTS, the player force standalone.
+        force = mts.surface_owner_force(entity.surface)
     end
     local dig = {
         surface = entity.surface,

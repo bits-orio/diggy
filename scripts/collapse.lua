@@ -6,6 +6,7 @@
 -- into buried crushed remains (CONTEXT.md). Stress math is deterministic;
 -- identical digging collapses identically across MTS teams.
 local hash = require("scripts.lib.hash")
+local mts = require("scripts.mts")
 
 local collapse = {}
 
@@ -105,7 +106,8 @@ local function trigger(surface, x, y, player_index)
 
     -- Cracking warning, then the ceiling comes down after the delay.
     local force = player_index and game.get_player(player_index).force
-    for _, player in pairs((force or game.forces.player).connected_players) do
+        or mts.surface_owner_force(surface)
+    for _, player in pairs(force.connected_players) do
         player.create_local_flying_text {
             text = { "diggy.cracking-sound-" .. hash.range(surface.map_gen_settings.seed, x, y, 60, 1, 2) },
             position = { x, y },
@@ -292,8 +294,17 @@ local function execute(pending)
 
     if rocks > 0 then
         storage.collapse_count[pending.surface_index] = (storage.collapse_count[pending.surface_index] or 0) + 1
-        local force = pending.player_index and game.get_player(pending.player_index).force or game.forces.player
+        local force = pending.player_index and game.get_player(pending.player_index).force
+            or mts.surface_owner_force(surface)
         force.print({ "diggy.cave-collapse" })
+        -- Cross-team schadenfreude (host-toggleable): other MTS teams hear
+        -- about it with the suffering team's coloured label.
+        if settings.global["diggy-collapse-broadcast"].value then
+            local label = mts.team_label(force)
+            for _, other in pairs(mts.other_team_forces(force)) do
+                other.print({ "diggy.cave-collapse-other", label })
+            end
+        end
         -- add_custom_alert needs a LuaEntity at the alert location; the
         -- original used a throwaway rock as the target, destroyed right after.
         local target = surface.create_entity {

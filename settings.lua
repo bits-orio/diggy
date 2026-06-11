@@ -45,6 +45,13 @@ data:extend({
         order = "c-a",
     },
     {
+        type = "bool-setting",
+        setting_type = "runtime-global",
+        name = "diggy-collapse-broadcast",
+        default_value = true,
+        order = "c-b",
+    },
+    {
         type = "double-setting",
         setting_type = "runtime-global",
         name = "diggy-treasure-chance",
