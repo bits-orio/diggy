@@ -1,4 +1,5 @@
 local mts = require("scripts.mts")
+local pop_text = require("scripts.pop_text")
 local world = require("scripts.world")
 local collapse = require("scripts.collapse")
 local threats = require("scripts.threats")
@@ -18,6 +19,7 @@ script.on_init(function()
     collapse.on_init()
     threats.on_init()
     caverns.on_init()
+    pop_text.on_init()
     install_guard.on_init()
     -- Guard first: on a mid-save install the world conversion must not run,
     -- or it would void an existing base.
@@ -31,6 +33,12 @@ script.on_configuration_changed(function()
     if not storage.stress then collapse.on_init() end
     storage.support_reach = storage.support_reach or {}
     caverns.on_init()
+    pop_text.on_init()
+    -- Retire the old screen-frame countdown (replaced by world pop texts).
+    for _, player in pairs(game.players) do
+        local frame = player.gui.screen["diggy-cavern-countdown"]
+        if frame then frame.destroy() end
+    end
 
     -- Saves store runtime settings, so defaults shipped by old releases stick
     -- forever. Rebase saves still on the exact old shipped defaults (the
@@ -167,6 +175,12 @@ end)
 script.on_nth_tick(30, function()
     collapse.on_heartbeat()
     caverns.on_heartbeat()
+end)
+
+-- Pop-text animation: per tick, but a single table check when nothing is
+-- animating (countdowns are the only spawner today).
+script.on_event(defines.events.on_tick, function(event)
+    pop_text.tick(event.tick)
 end)
 
 script.on_event(defines.events.on_chunk_generated, world.on_chunk_generated)

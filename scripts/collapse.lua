@@ -245,6 +245,13 @@ end
 -- Crush an entity: inventories go into a buried character-corpse (CONTEXT.md
 -- "Crushed remains"), then the entity dies.
 local function crush(surface, entity)
+    -- Characters just die: their vanilla death corpse already preserves the
+    -- full inventory. Extracting it first created a SECOND corpse with
+    -- copies of everything — free item duplication per collapse death.
+    if entity.type == "character" then
+        entity.die()
+        return
+    end
     local stacks = {}
     for i = 1, 10 do
         local ok, inventory = pcall(entity.get_inventory, i)

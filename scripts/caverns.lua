@@ -7,6 +7,7 @@ local world = require("scripts.world")
 local treasure = require("scripts.treasure")
 local dig_spawner = require("scripts.dig_spawner")
 local collapse = require("scripts.collapse")
+local pop_text = require("scripts.pop_text")
 
 local caverns = {}
 
@@ -65,22 +66,14 @@ local function carve_disc(surface, cx, cy, radius, force, carved, skip_vein)
     end
 end
 
--- Returns the unit_numbers of the worms guarding the room.
-local function populate_nest(surface, cx, cy, radius, seed)
+-- Spawn `count` worms scattered across the room; returns their unit_numbers.
+-- Every non-sanctuary room keeps at least one guardian — its death is what
+-- arms the ceiling, so an unguarded pre-collapse can never greet a breach.
+local function spawn_worms(surface, cx, cy, radius, seed, count)
     local tier = dig_spawner.tier_for(game.forces.enemy.get_evolution_factor(surface))
     local center = { cx + 0.5, cy + 0.5 }
-    local spawners = hash.range(seed, cx, cy, S_CONTENT, 1, 2)
-    for i = 1, spawners do
-        local kind = hash.roll(seed, cx, cy, S_CONTENT + 10 + i) < 0.6 and "biter-spawner" or "spitter-spawner"
-        local spot = surface.find_non_colliding_position(kind, center, radius, 0.5)
-        if spot then surface.create_entity { name = kind, position = spot, force = "enemy" } end
-    end
     local worm_ids = {}
-    local worms = math.floor(
-        hash.range(seed, cx, cy, S_CONTENT + 20, 2, 4)
-        * settings.global["diggy-cavern-worm-multiplier"].value + 0.5)
-    for i = 1, worms do
-        -- Spread worms across the room; fall back to the room center.
+    for i = 1, count do
         local target = {
             cx + 0.5 + hash.range(seed, cx, cy, S_CONTENT + 50 + i, -radius + 2, radius - 2),
             cy + 0.5 + hash.range(seed, cx, cy, S_CONTENT + 60 + i, -radius + 2, radius - 2),
@@ -93,6 +86,21 @@ local function populate_nest(surface, cx, cy, radius, seed)
         end
     end
     return worm_ids
+end
+
+local function guarded_count(base)
+    return math.max(1, math.floor(base * settings.global["diggy-cavern-worm-multiplier"].value + 0.5))
+end
+
+local function populate_nest(surface, cx, cy, radius, seed)
+    local center = { cx + 0.5, cy + 0.5 }
+    local spawners = hash.range(seed, cx, cy, S_CONTENT, 1, 2)
+    for i = 1, spawners do
+        local kind = hash.roll(seed, cx, cy, S_CONTENT + 10 + i) < 0.6 and "biter-spawner" or "spitter-spawner"
+        local spot = surface.find_non_colliding_position(kind, center, radius, 0.5)
+        if spot then surface.create_entity { name = kind, position = spot, force = "enemy" } end
+    end
+    return spawn_worms(surface, cx, cy, radius, seed, guarded_count(hash.range(seed, cx, cy, S_CONTENT + 20, 2, 4)))
 end
 
 local function populate_hoard(surface, cx, cy, radius, seed, depth)
@@ -184,8 +192,11 @@ local function make_room(surface, cx, cy, seed, force, carved)
         worm_ids = populate_nest(surface, cx, cy, radius, seed)
     elseif picked.kind == "hoard" then
         populate_hoard(surface, cx, cy, radius, seed, depth)
+        worm_ids = spawn_worms(surface, cx, cy, radius, seed, guarded_count(1))
     elseif picked.kind == "sanctuary" then
         populate_sanctuary(surface, cx, cy, radius, seed)
+    else
+        worm_ids = spawn_worms(surface, cx, cy, radius, seed, guarded_count(1))
     end
 
     -- Sanctuaries are truly stable; every other room owes the ceiling its
@@ -230,33 +241,12 @@ function caverns.on_worm_died(entity)
     end
 end
 
--- Countdown display, MTS-popover style: a top-centre screen frame per player
--- on the affected force, updated each heartbeat.
-local function update_countdown_gui(force, seconds)
-    for _, player in pairs(force.connected_players) do
-        local frame = player.gui.screen["diggy-cavern-countdown"]
-        if seconds then
-            if not frame then
-                frame = player.gui.screen.add { type = "frame", name = "diggy-cavern-countdown" }
-                -- NB: child names like "text"/"caption" collide with
-                -- LuaGuiElement's own properties and are rejected.
-                local label = frame.add { type = "label", name = "diggy-countdown-label" }
-                label.style.font = "heading-1"
-                local res, scale = player.display_resolution, player.display_scale
-                frame.location = { x = math.floor(res.width / 2 - 170 * scale), y = math.floor(90 * scale) }
-            end
-            frame["diggy-countdown-label"].caption = { "diggy.cavern-countdown", seconds }
-        elseif frame then
-            frame.destroy()
-        end
-    end
-end
-
+-- Countdown display: a rip-style pop text (rise + wobble) at the failing
+-- cavern on every number, shifting orange to red as zero approaches.
 function caverns.on_heartbeat()
     local countdowns = storage.cavern_countdowns
     if not countdowns or #countdowns == 0 then return end
     local now = game.tick
-    local remaining_by_force = {}
     for i = #countdowns, 1, -1 do
         local cd = countdowns[i]
         local surface = game.surfaces[cd.surface_index]
@@ -265,17 +255,20 @@ function caverns.on_heartbeat()
         elseif cd.at_tick <= now then
             table.remove(countdowns, i)
             local force = game.forces[cd.force_index]
+            pop_text.spawn(surface, { x = cd.cx + 0.5, y = cd.cy + 0.5 },
+                { "diggy.cavern-collapse-pop" }, { r = 1, g = 0.1, b = 0.1 }, force)
             collapse.sparse_collapse(surface, cd.cells, force, surface.map_gen_settings.seed)
         else
             local secs = math.ceil((cd.at_tick - now) / 60)
-            local f = cd.force_index
-            if not remaining_by_force[f] or secs < remaining_by_force[f] then
-                remaining_by_force[f] = secs
+            if secs ~= cd.last_secs then
+                cd.last_secs = secs
+                local force = game.forces[cd.force_index]
+                local heat = 1 - math.min(secs, 15) / 15
+                pop_text.spawn(surface, { x = cd.cx + 0.5, y = cd.cy + 0.5 },
+                    { "diggy.cavern-countdown-pop", secs },
+                    { r = 1, g = 0.65 * (1 - heat), b = 0.05 }, force)
             end
         end
-    end
-    for _, force in pairs(game.forces) do
-        update_countdown_gui(force, remaining_by_force[force.index])
     end
 end
 

@@ -20,8 +20,8 @@ local OIL = {
     field_threshold = 0.55,
     cell = 5, -- one well candidate per 5x5 tile cell
     min_depth = 120,
-    base = 20000,
-    per_dist = 100,
+    base = 28000,
+    per_dist = 140,
 }
 
 -- The well candidate is the hash-champion of its cell: guaranteed spacing
