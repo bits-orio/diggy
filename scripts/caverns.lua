@@ -238,7 +238,8 @@ local function update_countdown_gui(force, seconds)
         if seconds then
             if not frame then
                 frame = player.gui.screen.add { type = "frame", name = "diggy-cavern-countdown" }
-                frame.add { type = "label", name = "text", style = "heading_1_label" }
+                local label = frame.add { type = "label", name = "text" }
+                label.style.font = "heading-1"
                 local res, scale = player.display_resolution, player.display_scale
                 frame.location = { x = math.floor(res.width / 2 - 170 * scale), y = math.floor(90 * scale) }
             end

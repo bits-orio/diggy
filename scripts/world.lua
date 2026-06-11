@@ -56,15 +56,24 @@ local function ensure_chunk(surface, x, y)
 end
 
 -- Reveal the contiguous water blob touching (x, y), bounded for safety.
+-- Only VOID tiles flood (revealed floor and anything built on it is safe),
+-- entities are never destroyed by the tile swap, and any character clipped
+-- by the new shoreline is lifted to dry land — digging into a lake must
+-- never drown the digger.
 local function flood_water(surface, seed, x, y)
     local tiles, seen, queue = {}, {}, { { x, y } }
+    local first = true
+    local min_x, min_y, max_x, max_y = x, y, x, y
     while #queue > 0 and #tiles < WATER.flood_cap do
         local t = table.remove(queue)
         local key = t[1] .. "," .. t[2]
         if not seen[key] then
             seen[key] = true
-            if is_water_spot(seed, t[1], t[2]) then
+            if is_water_spot(seed, t[1], t[2]) and (first or is_void(surface, t[1], t[2])) then
+                first = false
                 tiles[#tiles + 1] = { name = "water", position = { t[1], t[2] } }
+                min_x, min_y = math.min(min_x, t[1]), math.min(min_y, t[2])
+                max_x, max_y = math.max(max_x, t[1]), math.max(max_y, t[2])
                 for _, d in pairs(DIRS4) do
                     ensure_chunk(surface, t[1] + d[1], t[2] + d[2])
                     queue[#queue + 1] = { t[1] + d[1], t[2] + d[2] }
@@ -72,7 +81,15 @@ local function flood_water(surface, seed, x, y)
             end
         end
     end
-    surface.set_tiles(tiles)
+    surface.set_tiles(tiles, true, false)
+    -- Rescue anyone the new shoreline clipped.
+    for _, character in pairs(surface.find_entities_filtered {
+        type = "character",
+        area = { { min_x - 1, min_y - 1 }, { max_x + 2, max_y + 2 } },
+    }) do
+        local dry = surface.find_non_colliding_position("character", character.position, 16, 0.5)
+        if dry then character.teleport(dry) end
+    end
     -- Lakes hold fish: roughly one per seven water tiles, seed-keyed.
     for _, t in pairs(tiles) do
         local tx, ty = t.position[1], t.position[2]
