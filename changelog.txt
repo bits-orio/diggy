@@ -1,4 +1,18 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.1
+Date: 2026-06-11
+  Bugfixes:
+    - Fixed a crash in the cave-collapse alert when a player had no character.
+    - Fixed the collapse stress accounting: re-digging collapse rubble no longer builds more stress than it relieves, so supported caves stay up and pillars/flooring genuinely hold. Tunneling is stress-neutral as in the original Diggy.
+  Changes:
+    - Ore veins fatten with depth (up to 3.5x width) and richness scales super-linearly, plus a flat 4x: digging deeper now clearly pays off. Starter ore doubled.
+    - Dig spawns come in packs scaled by depth and evolution (up to 14 deep), with a host pack-size multiplier setting.
+    - Threat registry with diggy-v1 remote interface (register_threat) for other mods. Bundled Mother adapter: mothers can wake past depth 400 (big mothers past 600), tier-banded by depth, weakened at first encounter, spawning a standoff distance away with a warning.
+    - Cross-team collapse announcements under Multi-Team Support, with the suffering team's coloured label (host-toggleable). Player-less digs (fire, biters) now attribute to the surface's owning team.
+    - Dig-speed research: 35 tiers (10 with space science), bonuses ramping to +100% per tier.
+  Locale:
+    - New strings for mother emergence, cross-team collapse alerts, and new settings.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.0
 Date: 2026-06-10
   Features:
