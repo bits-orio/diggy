@@ -1,4 +1,27 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.2
+Date: 2026-06-11
+  Major Features:
+    - Caverns are alive: every non-sanctuary room is guarded by worms (nest rooms hold 2-4 plus spawners; empty and hoard rooms a lone guardian). While any worm lives, no collapse can trigger in its room — rooms are taken by combat, never by physics.
+    - When a room's last worm dies, its ancient ceiling arms: failing areas get a 15-second animated countdown at the site (rising, wobbling numbers heating from orange to red), then shed roughly half their mass. Pillars placed during the countdown are honored — push the ceiling back under threshold and IT HOLDS.
+    - Killed nests release their brood in place: a depth-scaled burst of biters per spawner. Sieging is never free.
+    - New research, Support struts: six tiers (chemical through space science) extending newly placed walls' and reactors' support reach by one tile each.
+  Features:
+    - Lakes hold fish; the starter pool comes stocked; sanctuary pools too.
+    - The frontier wall is two layers deep; the spawn ring about three.
+    - Ambushes start at depth 75 and grow into packs steadily until ~depth 600, after which evolution carries the difficulty.
+    - Tech descriptions state exact outcomes (per-tier and cumulative numbers).
+  Balancing:
+    - Iron now out-riches copper ~1.4x; vein richness depth scaling retuned (fattening tendrils, super-linear richness, 2x flat).
+    - Oil reworked into 2D-scattered field wells with guaranteed spacing (no more straight rows) and rebalanced yield (~320% at the gate, ~1400% deep).
+    - Mothers wake from depth 350, tier-banded and weakened at first encounter.
+    - Defaults: biters 10% per dig, nests 5%, cavern worms x2, caverns 3% — old shipped defaults are migrated automatically with a chat notice.
+  Bugfixes:
+    - Fixed collapse deaths duplicating the victim's inventory across two corpses.
+    - Fixed two countdown GUI crashes (invalid style; reserved element name) by replacing the screen frame with world-anchored pop text.
+    - Digging into a lake can no longer drown the digger: floods only convert void, never destroy entities, and rescue anyone clipped by the shoreline.
+    - Fixed cavern rooms pre-filling with plug rocks that chain-collapsed onto their worms when mined.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.1
 Date: 2026-06-11
   Bugfixes:

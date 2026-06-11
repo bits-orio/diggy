@@ -45,8 +45,9 @@ script.on_configuration_changed(function()
     -- "every rock spawns biters" era) to the current ones; custom values are
     -- left untouched.
     local rebase = {
-        ["diggy-dig-biter-chance"] = { old = { [1.0] = true, [0.1] = true }, new = 0.015 },
-        ["diggy-dig-nest-chance"] = { old = { [0.1] = true, [0.01] = true }, new = 0.002 },
+        ["diggy-dig-biter-chance"] = { old = { [1.0] = true, [0.015] = true }, new = 0.1 },
+        ["diggy-dig-nest-chance"] = { old = { [0.1] = true, [0.01] = true, [0.002] = true }, new = 0.05 },
+        ["diggy-cavern-worm-multiplier"] = { old = { [1.0] = true }, new = 2.0 },
         ["diggy-cavern-chance"] = { old = { [0.02] = true }, new = 0.03 },
     }
     for name, r in pairs(rebase) do

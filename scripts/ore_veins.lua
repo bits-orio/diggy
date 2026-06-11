@@ -104,10 +104,10 @@ function ore_veins.materialize(surface, tile_x, tile_y, force)
 
     -- Depth pays off twice: tendrils fatten (up to ~3.5x base width) and
     -- richness grows super-linearly, so deep veins are wide and dense. The
-    -- flat 4x keeps a digging-constrained economy fed (every ore tile costs
+    -- flat 2x keeps a digging-constrained economy fed (every ore tile costs
     -- digs to even reach).
     local width_mult = math.min(1 + distance / 350, 3.5)
-    local richness_mult = (1 + distance / 400) * 4
+    local richness_mult = (1 + distance / 400) * 2
 
     for _, ore in pairs(ORES) do
         if distance > ore.min_depth then
