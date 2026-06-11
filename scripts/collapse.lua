@@ -18,16 +18,18 @@ local COLLAPSE_MASK_FACTOR = 16 -- original: collapse_threshold_total_strength
 
 -- Support strengths (original Template.support_beam_entities, adapted:
 -- our wall entities stand in for big-rock/huge-rock, void reveal = out-of-map).
--- Faithful to the original Diggy's support table (its 3.3 near-threshold is
--- documented as "just above the threshold of a normal 4 pillar grid"): a
--- stone-wall grid with 3-tile gaps is the intended safe pattern. The earlier
--- rock-support doubling was compensating for the plug-rock stress ratchet,
--- which is fixed; with symmetric accounting the original constants behave.
+-- DELIBERATE deviation from the original's table (rock 2, wall 3): the
+-- original's own comment admits a proper pillar grid sits at ~3.3 against a
+-- 3.57 threshold — permanently in the cracking band, 0.2 from death.
+-- Playtesting found that miserable. Walls at 5 put a 3-tile-gap grid at
+-- ~2.5-2.8: solidly safe, one missing pillar forgiven, a multi-pillar hole
+-- still fails. Rocks stay at the original 2 so dig accounting (net +1 per
+-- cleared tile) and tunnel safety match the original exactly.
 local SUPPORTS = {
     ["diggy-rock"] = 2,
     ["diggy-tree"] = 2,
-    ["stone-wall"] = 3,
-    ["nuclear-reactor"] = 4,
+    ["stone-wall"] = 5,
+    ["nuclear-reactor"] = 6,
 }
 local TILE_SUPPORTS = {
     ["stone-path"] = 0.03,
