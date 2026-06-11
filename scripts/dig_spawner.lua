@@ -8,7 +8,7 @@ local hash = require("scripts.lib.hash")
 local dig_spawner = {}
 
 -- No hostiles shallower than this; the carve-out and early base stay calm.
-local PEACEFUL_DEPTH = 75
+local PEACEFUL_DEPTH = 65
 -- Nests stay sparse: at most this many spawners within the cap radius.
 local NEST_CAP, NEST_CAP_RADIUS = 2, 40
 

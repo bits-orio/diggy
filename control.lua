@@ -17,6 +17,7 @@ script.on_init(function()
     charting.on_init()
     collapse.on_init()
     threats.on_init()
+    caverns.on_init()
     install_guard.on_init()
     -- Guard first: on a mid-save install the world conversion must not run,
     -- or it would void an existing base.
@@ -29,6 +30,7 @@ end)
 script.on_configuration_changed(function()
     if not storage.stress then collapse.on_init() end
     storage.support_reach = storage.support_reach or {}
+    caverns.on_init()
 
     -- Saves store runtime settings, so defaults shipped by old releases stick
     -- forever. Rebase saves still on the exact old shipped defaults (the
@@ -90,6 +92,9 @@ local removal_filter = {}
 for _, name in pairs(collapse.SUPPORT_NAMES) do
     removal_filter[#removal_filter + 1] = { filter = "name", name = name }
 end
+for _, name in pairs({ "small-worm-turret", "medium-worm-turret", "big-worm-turret", "behemoth-worm-turret" }) do
+    removal_filter[#removal_filter + 1] = { filter = "name", name = name }
+end
 
 -- Support reach grows with researched diggy-support-reach tiers (per force).
 local function support_reach(force)
@@ -101,6 +106,14 @@ local function support_reach(force)
     return reach
 end
 
+-- Worm deaths can arm their cavern room (see caverns.on_worm_died).
+local WORMS = {
+    ["small-worm-turret"] = true,
+    ["medium-worm-turret"] = true,
+    ["big-worm-turret"] = true,
+    ["behemoth-worm-turret"] = true,
+}
+
 local function on_removed(event)
     local entity = event.entity
     if COVER[entity.name] then
@@ -108,6 +121,8 @@ local function on_removed(event)
             dig_yield.on_player_mined(event)
         end
         on_dig(event)
+    elseif WORMS[entity.name] then
+        caverns.on_worm_died(entity)
     else
         local reach = storage.support_reach and storage.support_reach[entity.unit_number]
         if storage.support_reach then storage.support_reach[entity.unit_number] = nil end
@@ -149,7 +164,10 @@ script.on_event(defines.events.on_robot_mined_tile, function(event)
     collapse.on_mined_tile(event.robot.surface, event.tiles)
 end)
 
-script.on_nth_tick(30, collapse.on_heartbeat)
+script.on_nth_tick(30, function()
+    collapse.on_heartbeat()
+    caverns.on_heartbeat()
+end)
 
 script.on_event(defines.events.on_chunk_generated, world.on_chunk_generated)
 script.on_event(defines.events.on_chunk_charted, world.on_chunk_charted)

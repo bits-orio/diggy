@@ -105,8 +105,13 @@ local function cell_key(x, y)
     return x .. "," .. y
 end
 
+-- Injected by caverns.lua: returns true while a cell sits inside a cavern
+-- room still under worm protection (no triggers there until the worms die).
+collapse.protection_check = nil
+
 local function trigger(surface, x, y, player_index)
     if not settings.global["diggy-collapse-enabled"].value then return end
+    if collapse.protection_check and collapse.protection_check(surface, x, y) then return end
 
     -- Fresh reveals plug with a single rock instead of chain-collapsing —
     -- this is what lets cavern rooms open without instantly caving in.
@@ -139,6 +144,10 @@ local function trigger(surface, x, y, player_index)
     }
 end
 
+-- While true, positive stress never triggers (used for batch-loading a
+-- cavern's deferred stress at activation).
+local suppress_triggers = false
+
 -- Add a fraction to one stress cell; trigger when crossing thresholds.
 local function add_cell(surface, x, y, fraction, player_index)
     x = 2 * math.floor(x * 0.5)
@@ -153,7 +162,7 @@ local function add_cell(surface, x, y, fraction, player_index)
     local value = (map[key] or 0) + fraction
     map[key] = value
 
-    if fraction > 0 then
+    if fraction > 0 and not suppress_triggers then
         if value > STRESS_THRESHOLD then
             trigger(surface, x, y, player_index)
         elseif value > NEAR_THRESHOLD then
@@ -341,6 +350,65 @@ local function execute(pending)
             target.destroy()
         end
     end
+end
+
+-- Cavern activation: batch-load the room's deferred reveal stress (+1 per
+-- carved tile, triggers suppressed) and return the cells that ended over the
+-- collapse threshold — the cavern's failure zone.
+function collapse.arm_area(surface, tiles)
+    suppress_triggers = true
+    local hot = {}
+    for _, t in pairs(tiles) do
+        for _, m in pairs(MASK) do
+            local value = add_cell(surface, t[1] + m.x, t[2] + m.y, m.value * VOID_REVEAL_STRESS)
+            if value > STRESS_THRESHOLD then
+                local cx = 2 * math.floor((t[1] + m.x) * 0.5)
+                local cy = 2 * math.floor((t[2] + m.y) * 0.5)
+                hot[cell_key(cx, cy)] = { x = cx, y = cy }
+            end
+        end
+    end
+    suppress_triggers = false
+    local list = {}
+    for _, c in pairs(hot) do list[#list + 1] = c end
+    return list
+end
+
+-- Cavern collapse: like execute(), but over given cells and deliberately
+-- sparse — an ancient ceiling sheds about half its mass, not all of it.
+function collapse.sparse_collapse(surface, cells, force, seed)
+    local rocks = 0
+    for _, cell in pairs(cells) do
+        for dx = 0, 1 do
+            for dy = 0, 1 do
+                local tx, ty = cell.x + dx, cell.y + dy
+                local supported = false
+                for _, entity in pairs(surface.find_entities_filtered {
+                    area = { { tx + 0.05, ty + 0.05 }, { tx + 0.95, ty + 0.95 } },
+                }) do
+                    if SUPPORTS[entity.name] then
+                        supported = true
+                    elseif entity.name == "character-corpse" or entity.type == "resource" then
+                        -- buried, not crushed
+                    elseif entity.type == "character" or entity.health then
+                        crush(surface, entity)
+                    end
+                end
+                local tile = surface.get_tile(tx, ty)
+                if not supported and tile.valid and tile.name ~= "out-of-map"
+                    and not tile.name:find("water", 1, true)
+                    and hash.roll(seed, tx, ty, 80) < 0.55 then
+                    surface.create_entity { name = "diggy-rock", position = { tx + 0.5, ty + 0.5 }, force = "neutral" }
+                    stress_add(surface, { x = tx + 0.5, y = ty + 0.5 }, -SUPPORTS["diggy-rock"])
+                    rocks = rocks + 1
+                end
+            end
+        end
+    end
+    if rocks > 0 and force then
+        force.print({ "diggy.cavern-collapsed" })
+    end
+    return rocks
 end
 
 -- The only timer in the mod: a 0.5s heartbeat that fires pending collapses

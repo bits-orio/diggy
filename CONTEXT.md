@@ -85,6 +85,9 @@ _Avoid_: cave (ambiguous with the whole world)
 **Room**:
 The space at the end of a cavern tunnel, with a depth-gated personality: empty cave, nest room (spawners and worms), hoard room (chest cluster), or rare sanctuary (grass, water, fish — a safe moment).
 
+**Arming**:
+A room's ceiling owes its stress debt the moment nothing guards it: nest rooms arm when their last worm dies; unguarded rooms arm at breach. Failing areas give a 15-second on-screen countdown, then shed roughly half their mass (a sparse collapse). Sanctuaries never arm. While worms live, no collapse can trigger in their room — the only way in is to fight.
+
 **Evolution pressure**:
 The contribution of total volume dug to enemy evolution — greed makes the baseline meaner, while depth decides what shows up.
 
