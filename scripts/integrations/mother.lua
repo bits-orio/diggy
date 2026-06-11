@@ -17,11 +17,16 @@ if script.active_mods["Mother"] then
         big_mothers[#big_mothers + 1] = ("Schall-category-%d-big-mother-spitter"):format(tier)
     end
 
+    -- Tiers unlock by depth (weakest existing tier first) and early
+    -- encounters arrive weakened — the first mother should be a hard fight,
+    -- not a forced restart.
     threats.register_bundled {
         name = "mother",
         entities = mothers,
         min_depth = 300,
         chance = 0.003,
+        depth_step = 80,
+        health_ramp = { start = 0.3, full_depth = 900 },
         announce = "diggy.mother-emerges",
     }
     threats.register_bundled {
@@ -29,6 +34,8 @@ if script.active_mods["Mother"] then
         entities = big_mothers,
         min_depth = 600,
         chance = 0.0015,
+        depth_step = 100,
+        health_ramp = { start = 0.5, full_depth = 1500 },
         announce = "diggy.big-mother-emerges",
     }
 end
