@@ -50,18 +50,10 @@ local function tier_for(depth)
     end
 end
 
-function treasure.on_dig(dig)
-    local surface = dig.surface
-    local x = math.floor(dig.position.x)
-    local y = math.floor(dig.position.y)
-
+-- Place a loot chest near a tile, tiered by depth and seed-keyed by the tile.
+-- Used by per-dig treasure rolls and by hoard rooms (caverns).
+function treasure.spawn_chest(surface, x, y, depth)
     local seed = surface.map_gen_settings.seed
-    local chance = settings.global["diggy-treasure-chance"].value
-    if hash.roll(seed, x, y, S_PRESENCE) >= chance then
-        return
-    end
-
-    local depth = math.sqrt(x * x + y * y)
     local tier = tier_for(depth)
     local position = surface.find_non_colliding_position(tier.chest, { x + 0.5, y + 0.5 }, 2, 0.5)
     if not position then return end
@@ -71,6 +63,19 @@ function treasure.on_dig(dig)
         local item = tier.loot[hash.range(seed, x, y, S_ITEM + i * 100, 1, #tier.loot)]
         chest.insert { name = item.name, count = hash.range(seed, x, y, S_AMOUNT + i * 100, item.min, item.max) }
     end
+end
+
+function treasure.on_dig(dig)
+    local surface = dig.surface
+    local x = math.floor(dig.position.x)
+    local y = math.floor(dig.position.y)
+
+    local chance = settings.global["diggy-treasure-chance"].value
+    if hash.roll(surface.map_gen_settings.seed, x, y, S_PRESENCE) >= chance then
+        return
+    end
+
+    treasure.spawn_chest(surface, x, y, math.sqrt(x * x + y * y))
 end
 
 return treasure

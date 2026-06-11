@@ -47,6 +47,15 @@ data:extend({
         order = "b-e",
     },
     {
+        type = "double-setting",
+        setting_type = "runtime-global",
+        name = "diggy-cavern-chance",
+        default_value = 0.02,
+        minimum_value = 0,
+        maximum_value = 1,
+        order = "b-f",
+    },
+    {
         type = "bool-setting",
         setting_type = "runtime-global",
         name = "diggy-enemy-expansion",

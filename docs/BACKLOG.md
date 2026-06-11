@@ -21,6 +21,13 @@ Categories settled (depth reached, tiles dug, treasures found). Exact thresholds
 
 ## Deferred to v1.x
 
+### WDM-inspired features not in cavern v1 (decided 2026-06-10)
+Cavern carving + empty/nest/hoard/sanctuary rooms shipped (ADR 0006). Deferred:
+- Light & atmosphere pass: `rendering.draw_light` cones in special rooms, varied cavern dirt tiles, ceiling-drop particles, wind ambience.
+- Ruins and hell-rooms (boss/swarm-burst rooms at extreme depth) — need prefab and boss design, plus a determinism story for swarm cadence.
+- Gas-leak hazards and periodic swarm events.
+- WDM's driller machine (auto-dig toward a target) — interesting late-game automation candidate.
+
 ### Team stats tab (MTS)
 Cut from v1 as redundant with MTS milestone/production stats. Revisit only if hosts ask for live exact numbers (current depth, volume dug, collapse count). `register_team_tab` is the mechanism.
 

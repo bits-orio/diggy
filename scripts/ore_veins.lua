@@ -19,12 +19,12 @@ local ORES = {
     { name = "stone", seed = 1400, width = 0.040, min_depth = 40, base = 300, per_dist = 2 },
 }
 
-function ore_veins.on_dig(dig)
-    local surface = dig.surface
-    local x = math.floor(dig.position.x) + 0.5
-    local y = math.floor(dig.position.y) + 0.5
+-- Materialize the vein (if any) at a tile — used for manual digs and for
+-- cavern-carved tiles alike. `force` (optional) receives the discovery notice.
+function ore_veins.materialize(surface, tile_x, tile_y, force)
+    local x, y = tile_x + 0.5, tile_y + 0.5
 
-    local tile = surface.get_tile(x, y)
+    local tile = surface.get_tile(tile_x, tile_y)
     if not tile.valid or tile.name:find("water", 1, true) then
         return
     end
@@ -44,20 +44,18 @@ function ore_veins.on_dig(dig)
                 -- First exposure of a vein (no same ore adjacent yet) gets a
                 -- chat notice — scoped to the digger's force, so under MTS
                 -- only that team sees its own discoveries.
-                if created
+                if created and force
                     and surface.count_entities_filtered { name = ore.name, position = { x, y }, radius = 1.6 } <= 1 then
-                    local force = dig.force
-                    if not force and dig.player_index then
-                        force = game.get_player(dig.player_index).force
-                    end
-                    if force then
-                        force.print({ "diggy.vein-discovered", "[entity=" .. ore.name .. "]", created.localised_name })
-                    end
+                    force.print({ "diggy.vein-discovered", "[entity=" .. ore.name .. "]", created.localised_name })
                 end
                 return
             end
         end
     end
+end
+
+function ore_veins.on_dig(dig)
+    ore_veins.materialize(dig.surface, math.floor(dig.position.x), math.floor(dig.position.y), dig.force)
 end
 
 return ore_veins

@@ -22,13 +22,15 @@ local UNIT_LADDER = {
     { evolution = 0.85, biter = "behemoth-biter", spitter = "behemoth-spitter", worm = "behemoth-worm-turret" },
 }
 
-local function tier_for(evolution)
+-- Public: caverns use the same ladder for nest-room inhabitants.
+function dig_spawner.tier_for(evolution)
     local tier = UNIT_LADDER[1]
     for _, candidate in pairs(UNIT_LADDER) do
         if evolution >= candidate.evolution then tier = candidate end
     end
     return tier
 end
+local tier_for = dig_spawner.tier_for
 
 local function spawn_units(surface, position, tier, seed, x, y)
     for i = 1, hash.range(seed, x, y, S_COUNT, 1, 2) do

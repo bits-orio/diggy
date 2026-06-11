@@ -25,9 +25,6 @@ end
 
 function charting.on_dig(dig)
     local force = dig.force
-    if not force and dig.player_index then
-        force = game.get_player(dig.player_index).force
-    end
     if not force then return end
 
     local p = dig.position

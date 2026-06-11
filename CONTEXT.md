@@ -71,8 +71,15 @@ A spawnable hostile defined by a declarative spec (entity names, depth gate, wei
 A depth-gated band of the threat pool. Digging past a tier's depth unlocks its threats for spawn rolls.
 
 **Dig spawn**:
-Hostiles materializing as the consequence of a dig roll — the only way enemies ever enter the world. Common rolls produce units; rare rolls produce a nest or worm in the revealed space. Vanilla biter expansion is off by default so this stays the sole nest source.
+Hostiles materializing as the consequence of a dig roll — together with cavern room contents, the only way enemies ever enter the world. Common rolls produce units; rare rolls produce a nest or worm in the revealed space. Vanilla biter expansion is off by default so digging stays the sole enemy source.
 _Avoid_: pre-spawned nests, alien spawner (scenario-era term)
+
+**Cavern**:
+A space that carves open from a dig: a seed-keyed roll can breach a snaking tunnel, sometimes ending in a room. Carved tiles materialize veins and chart, but per-tile spawn/treasure rolls are skipped — the room's contents are the sole source of its danger and loot.
+_Avoid_: cave (ambiguous with the whole world)
+
+**Room**:
+The space at the end of a cavern tunnel, with a depth-gated personality: empty cave, nest room (spawners and worms), hoard room (chest cluster), or rare sanctuary (grass, water, fish — a safe moment).
 
 **Evolution pressure**:
 The contribution of total volume dug to enemy evolution — greed makes the baseline meaner, while depth decides what shows up.

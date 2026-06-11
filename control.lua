@@ -3,6 +3,7 @@ local dig_spawner = require("scripts.dig_spawner")
 local dig_yield = require("scripts.dig_yield")
 local ore_veins = require("scripts.ore_veins")
 local treasure = require("scripts.treasure")
+local caverns = require("scripts.caverns")
 local charting = require("scripts.charting")
 local install_guard = require("scripts.install_guard")
 
@@ -18,16 +19,21 @@ end)
 -- (e.g. creating entities at its tile), so none of them touch it directly.
 local function on_dig(event)
     local entity = event.entity
+    local force = event.force
+    if not force and event.player_index then
+        force = game.get_player(event.player_index).force
+    end
     local dig = {
         surface = entity.surface,
         position = entity.position,
-        force = event.force,
+        force = force,
         player_index = event.player_index,
     }
     dig_tracker.on_dig(dig)
     ore_veins.on_dig(dig)
     treasure.on_dig(dig)
     dig_spawner.on_dig(dig)
+    caverns.on_dig(dig)
     charting.on_dig(dig)
 end
 
