@@ -190,7 +190,7 @@ function build_chunk(surface, area)
         surface.create_entity {
             name = STARTER_ORES[hash.range(seed, o[1], o[2], S_STARTER_ORE, 1, #STARTER_ORES)],
             position = { o[1] + 0.5, o[2] + 0.5 },
-            amount = 80,
+            amount = 160,
         }
     end
 end

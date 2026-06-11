@@ -23,7 +23,7 @@ if script.active_mods["Mother"] then
     threats.register_bundled {
         name = "mother",
         entities = mothers,
-        min_depth = 300,
+        min_depth = 400,
         chance = 0.003,
         depth_step = 80,
         health_ramp = { start = 0.3, full_depth = 900 },
