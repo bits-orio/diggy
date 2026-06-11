@@ -85,4 +85,13 @@ data:extend({
         maximum_value = 10,
         order = "b-f",
     },
+    {
+        type = "double-setting",
+        setting_type = "runtime-global",
+        name = "diggy-cavern-worm-multiplier",
+        default_value = 1.0,
+        minimum_value = 0,
+        maximum_value = 10,
+        order = "b-g",
+    },
 })
