@@ -123,9 +123,11 @@ function world.carve_tile(surface, x, y, force, skip_vein)
     if not skip_vein then
         ore_veins.materialize(surface, x, y, force)
     end
-    -- Carved space stresses the ceiling like any reveal, but with the fresh-
-    -- tile grace so rooms open up instead of instantly caving in.
-    collapse.tile_revealed(surface, x, y)
+    -- Caverns are pre-stabilized natural caves: carved tiles add NO reveal
+    -- stress. Big rooms used to cross the collapse threshold during carving,
+    -- fill with grace-plug rocks, and then collapse wholesale when a plug was
+    -- mined — clearing nest rooms via physics instead of fighting. Player
+    -- digs at a cavern's edge still follow normal stress rules.
 end
 
 -- Advance the frontier around freshly opened tiles: void within TWO steps of

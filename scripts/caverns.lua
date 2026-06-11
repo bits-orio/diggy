@@ -51,7 +51,7 @@ local function populate_nest(surface, cx, cy, radius, seed)
         local spot = surface.find_non_colliding_position(kind, center, radius, 0.5)
         if spot then surface.create_entity { name = kind, position = spot, force = "enemy" } end
     end
-    local worms = hash.range(seed, cx, cy, S_CONTENT + 20, 1, 2)
+    local worms = hash.range(seed, cx, cy, S_CONTENT + 20, 2, 4)
     for _ = 1, worms do
         local spot = surface.find_non_colliding_position(tier.worm, center, radius, 0.5)
         if spot then surface.create_entity { name = tier.worm, position = spot, force = "enemy" } end
