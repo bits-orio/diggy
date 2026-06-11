@@ -238,12 +238,14 @@ local function update_countdown_gui(force, seconds)
         if seconds then
             if not frame then
                 frame = player.gui.screen.add { type = "frame", name = "diggy-cavern-countdown" }
-                local label = frame.add { type = "label", name = "text" }
+                -- NB: child names like "text"/"caption" collide with
+                -- LuaGuiElement's own properties and are rejected.
+                local label = frame.add { type = "label", name = "diggy-countdown-label" }
                 label.style.font = "heading-1"
                 local res, scale = player.display_resolution, player.display_scale
                 frame.location = { x = math.floor(res.width / 2 - 170 * scale), y = math.floor(90 * scale) }
             end
-            frame.text.caption = { "diggy.cavern-countdown", seconds }
+            frame["diggy-countdown-label"].caption = { "diggy.cavern-countdown", seconds }
         elseif frame then
             frame.destroy()
         end
