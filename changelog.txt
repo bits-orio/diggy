@@ -1,0 +1,9 @@
+---------------------------------------------------------------------------------------------------
+Version: 0.1.0
+Date: ????
+  Features:
+    - Initial scaffold: nauvis becomes a fully pre-generated world hidden under solid rock cover.
+    - Dig by hand or damage to reveal terrain; construction robots cannot deconstruct rock cover.
+    - Ore tendrils, sealed water pockets, and pre-spawned enemy nest pockets, all from data-stage noise.
+    - Per-surface dig tracking: volume dug raises enemy evolution (host-tunable), depth recorded for progression.
+    - Mid-save install detection with a clear warning (Diggy requires a new map).
