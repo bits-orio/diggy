@@ -1,16 +1,16 @@
 ---------------------------------------------------------------------------------------------------
 Version: 0.1.0
-Date: ????
+Date: 2026-06-10
   Features:
-    - Initial scaffold: nauvis becomes a black void built into caves at runtime as you dig the frontier wall.
-    - Dig by hand or damage to advance the wall; construction robots cannot deconstruct it.
+    - Initial release: nauvis becomes a black void built into caves at runtime as you dig the frontier wall.
+    - Dig by hand or damage to advance the wall; construction robots cannot deconstruct it. Tree-cover patches mine faster but burn.
+    - Cave collapses: unsupported ceilings crack, then come down — support them with remaining wall, stone walls, and stone/concrete flooring. Crushed buildings are buried with their inventories; dig them back out.
+    - Ore veins materialize at dig time from map-seed-deterministic noise; first exposure announces to your team. No ore spoilers anywhere.
     - Caverns: a dig can breach a snaking tunnel, sometimes opening into a room — empty, nest, hoard, or rare sanctuary by depth.
-    - Ore veins materialize at dig time from map-seed-deterministic noise; no pre-generated ore spoilers.
-    - Light mixed starter ore patch inside the spawn carve-out.
-    - Hand-mining rock yields a random ore mix on top of stone, richer with depth.
-    - Treasure chests sealed in the cover at seed-fixed locations; loot scales with depth.
-    - Dig spawns: biters and rarer nests/worms appear only as dig consequences; expansion off by default.
-    - Tree-cover patches: quick to mine, flammable, otherwise behave as rock cover.
-    - Map starts dark except one chunk at spawn; the chart grows as you dig.
-    - Sealed water pockets; per-surface dig tracking drives evolution (host-tunable).
-    - Mid-save install detection with a clear warning (Diggy requires a new map).
+    - Dig spawns: biters and rarer nests appear only as dig consequences; biter expansion off by default.
+    - Treasure chests sealed in the wall at seed-fixed locations; loot scales with depth.
+    - Hand-mining rock yields a mixed ore haul on top of stone, richer with depth.
+    - Dig speed research: 35 technologies from steel axe through space science, up to +100% per tier.
+    - Spawn carve-out with scattered starter ore and a guaranteed water pool; map starts dark and grows as you dig.
+    - Every roll is seed-keyed: identical worlds and identical dig outcomes across Multi-Team Support teams.
+    - All difficulty knobs are host-tunable runtime settings.

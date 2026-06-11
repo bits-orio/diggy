@@ -20,9 +20,11 @@ echo "::group::Idempotency check"
 # Public endpoint — no auth needed. /full includes the releases array with
 # every published version. If our version is already there, this is a re-run
 # and we should noop.
+FIRST_PUBLISH=""
 PORTAL_INFO=$(curl -fsSL "https://mods.factorio.com/api/mods/${MOD}/full" || echo "")
 if [[ -z "$PORTAL_INFO" ]]; then
-    echo "warning: mod '${MOD}' not found on portal yet (first release?)"
+    echo "mod '${MOD}' not on the portal yet — using init_publish (first release)"
+    FIRST_PUBLISH=1
 else
     EXISTING=$(echo "$PORTAL_INFO" \
         | jq -r --arg v "$VERSION" '.releases[]? | select(.version == $v) | .version')
@@ -34,12 +36,20 @@ else
 fi
 echo "::endgroup::"
 
-echo "::group::Step 1 — init_upload"
+# Brand-new mods go through init_publish (creates the portal entry); released
+# mods add versions through init_upload.
+if [[ -n "$FIRST_PUBLISH" ]]; then
+    INIT_ENDPOINT="https://mods.factorio.com/api/v2/mods/init_publish"
+else
+    INIT_ENDPOINT="https://mods.factorio.com/api/v2/mods/releases/init_upload"
+fi
+
+echo "::group::Step 1 — ${INIT_ENDPOINT##*/}"
 INIT_RESPONSE=$(curl -sS \
     -w "\nHTTP_CODE:%{http_code}" \
     -H "Authorization: Bearer ${FACTORIO_API_KEY}" \
     -F "mod=${MOD}" \
-    "https://mods.factorio.com/api/v2/mods/releases/init_upload")
+    "$INIT_ENDPOINT")
 
 INIT_HTTP=$(echo "$INIT_RESPONSE" | tail -n1 | cut -d: -f2)
 INIT_BODY=$(echo "$INIT_RESPONSE" | sed '$d')
