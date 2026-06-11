@@ -79,7 +79,9 @@ local function archive(s, stage)
 end
 
 -- player is optional: headless callers (diggy-v1 debug_sim) anchor at spawn.
-function sim.start(player, bare)
+-- slow mode digs ~10/s instead of 240/s and repaints the stress overlay
+-- every 10 seconds, so a player can watch the ledger evolve step by step.
+function sim.start(player, bare, slow)
     if storage.sim then
         if player then player.print({ "diggy.sim-already-running" }) end
         return
@@ -106,6 +108,7 @@ function sim.start(player, bare)
         collapses_at_start = total_collapses(),
         last_log = game.tick,
         run_id = string.format("diggy-sim-%s-t%d", bare and "bare" or "pillared", game.tick),
+        slow = slow or false,
     }
     slog(storage.sim, string.format("start region=(%d,%d)..(%d,%d) pre-vented=%d cells artifacts=script-output/%s/", x1, y1, x1 + SIZE, y1 + SIZE, vented, storage.sim.run_id))
     archive(storage.sim, "start")
@@ -166,6 +169,15 @@ function sim.step()
         storage.sim = nil
         return
     end
+    if s.slow then
+        if game.tick % 6 ~= 0 then return end
+        if s.player_index and game.tick % 600 == 0 then
+            local player = game.get_player(s.player_index)
+            if player and player.connected then
+                pcall(collapse.debug_overlay, player)
+            end
+        end
+    end
     local x2, y2 = s.x1 + SIZE, s.y1 + SIZE
 
     -- One scan per tick; dig the best candidates (burrow toward the region,
@@ -204,7 +216,7 @@ function sim.step()
         finish(s)
         return
     else
-        for i = 1, math.min(DIGS_PER_TICK, #candidates) do
+        for i = 1, math.min(s.slow and 1 or DIGS_PER_TICK, #candidates) do
             local entry = candidates[i]
             if entry[1].valid then
                 if entry[2] < 1000000 then s.region_seen = true end

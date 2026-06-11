@@ -227,11 +227,11 @@ commands.add_command("diggy-sim", { "diggy.command-sim" }, function(event)
         player.print({ "diggy.admin-only" })
         return
     end
-    local param = event.parameter
+    local param = event.parameter or ""
     if param == "stop" then
         sim.stop(player)
     else
-        sim.start(player, param == "bare")
+        sim.start(player, param:find("bare") ~= nil, param:find("slow") ~= nil)
     end
 end)
 

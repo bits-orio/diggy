@@ -341,6 +341,13 @@ function caverns.on_dig(dig)
         max_x, max_y = math.max(max_x, cx + radius), math.max(max_y, cy + radius)
     end
 
+    -- Tunnel tiles owe the same ceiling debt as everything else (rooms charge
+    -- their own in make_room). Uncharged tunnels were free open space —
+    -- inconsistent with dug halls, and visibly "unstressed" to players.
+    if #opened > 0 then
+        collapse.arm_area(surface, opened, 0.9)
+    end
+
     -- Wall off every void tile touching the carved space — the cavern gets
     -- its own frontier instead of bleeding into blackness.
     world.advance_frontier(surface, carved)
