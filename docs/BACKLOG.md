@@ -46,6 +46,7 @@ Cutscene, blueprint_tools GUI, antigrief autojail, restart command, shelob, flam
 
 ## Standing constraints (don't re-litigate)
 - Hostiles only ever appear via dig spawns. No pre-spawned nests (reversed 2026-06-10 after playtest); biter expansion off by default so digging stays the sole nest source.
+- All dig-outcome randomness is seed-keyed (ADR 0005): identical worlds and identical dig outcomes across MTS teams. `math.random` in a dig path is a bug.
 - MTS and ODB are optional dependencies; Diggy must be fully playable with neither.
 - Diggy never grants starting gear (FasterStart / MTS starter items own that).
 - Every difficulty knob is a host setting; presets scale them together.

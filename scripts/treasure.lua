@@ -1,7 +1,12 @@
--- Treasure sealed in the cover (CONTEXT.md "Treasure"): presence is decided by
--- a deterministic position hash of the map seed, so MTS team worlds hide their
--- chests in identical places. Contents scale with depth.
+-- Treasure sealed in the cover (CONTEXT.md "Treasure"): presence AND contents
+-- are seed-keyed by tile (ADR 0005), so MTS team worlds hide identical chests
+-- with identical loot in identical places. Contents scale with depth.
+local hash = require("scripts.lib.hash")
+
 local treasure = {}
+
+-- Hash stream ids (keep unique across all dig modules).
+local S_PRESENCE, S_PICKS, S_ITEM, S_AMOUNT = 20, 21, 22, 23
 
 local LOOT_TIERS = {
     {
@@ -39,27 +44,6 @@ local LOOT_TIERS = {
     },
 }
 
--- Deterministic [0,1) hash of (seed, tile). Multiplies are done in 16-bit
--- halves: a naive 32-bit multiply overflows double precision (2^53) and the
--- quantization makes small roll values unreachable — chests would never spawn.
-local band, bxor, rshift = bit32.band, bit32.bxor, bit32.rshift
-
-local function mulmod32(a, b)
-    local lo = band(a, 0xffff)
-    local hi = rshift(a, 16)
-    return (band(hi * b, 0xffff) * 65536 + lo * b) % 4294967296
-end
-
-local function position_roll(seed, x, y)
-    local h = (x * 374761393 + y * 668265263 + seed * 97) % 4294967296
-    h = bxor(h, rshift(h, 16))
-    h = mulmod32(h, 0x85ebca6b)
-    h = bxor(h, rshift(h, 13))
-    h = mulmod32(h, 0xc2b2ae35)
-    h = bxor(h, rshift(h, 16))
-    return h / 4294967296
-end
-
 local function tier_for(depth)
     for _, tier in pairs(LOOT_TIERS) do
         if depth <= tier.max_depth then return tier end
@@ -71,8 +55,9 @@ function treasure.on_dig(dig)
     local x = math.floor(dig.position.x)
     local y = math.floor(dig.position.y)
 
+    local seed = surface.map_gen_settings.seed
     local chance = settings.global["diggy-treasure-chance"].value
-    if position_roll(surface.map_gen_settings.seed, x, y) >= chance then
+    if hash.roll(seed, x, y, S_PRESENCE) >= chance then
         return
     end
 
@@ -82,9 +67,9 @@ function treasure.on_dig(dig)
     if not position then return end
 
     local chest = surface.create_entity { name = tier.chest, position = position, force = "neutral" }
-    for _ = 1, math.random(2, 3) do
-        local item = tier.loot[math.random(#tier.loot)]
-        chest.insert { name = item.name, count = math.random(item.min, item.max) }
+    for i = 1, hash.range(seed, x, y, S_PICKS, 2, 3) do
+        local item = tier.loot[hash.range(seed, x, y, S_ITEM + i * 100, 1, #tier.loot)]
+        chest.insert { name = item.name, count = hash.range(seed, x, y, S_AMOUNT + i * 100, item.min, item.max) }
     end
 end
 

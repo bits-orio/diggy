@@ -36,11 +36,24 @@ function ore_veins.on_dig(dig)
         if distance > ore.min_depth then
             local noise = Simplex.d2(x * TENDRIL_SCALE, y * TENDRIL_SCALE, seed + ore.seed)
             if math.abs(noise) < ore.width then
-                surface.create_entity {
+                local created = surface.create_entity {
                     name = ore.name,
                     position = { x, y },
                     amount = math.floor(ore.base + distance * ore.per_dist),
                 }
+                -- First exposure of a vein (no same ore adjacent yet) gets a
+                -- chat notice — scoped to the digger's force, so under MTS
+                -- only that team sees its own discoveries.
+                if created
+                    and surface.count_entities_filtered { name = ore.name, position = { x, y }, radius = 1.6 } <= 1 then
+                    local force = dig.force
+                    if not force and dig.player_index then
+                        force = game.get_player(dig.player_index).force
+                    end
+                    if force then
+                        force.print({ "diggy.vein-discovered", "[entity=" .. ore.name .. "]", created.localised_name })
+                    end
+                end
                 return
             end
         end

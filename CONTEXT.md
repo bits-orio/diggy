@@ -80,6 +80,10 @@ The contribution of total volume dug to enemy evolution — greed makes the base
 **Difficulty preset**:
 A named bundle (e.g. Casual / Classic / Brutal) that scales the threat, evolution, and collapse knobs together. Every knob remains individually overridable by the host. Diggy never grants starting gear — that belongs to FasterStart or MTS starter items.
 
+**Seed-keyed**:
+Derived deterministically from (map seed, tile, stream id) — the only permitted source of randomness for dig outcomes, so MTS teams face identical worlds. `math.random` in a dig path is a bug.
+_Avoid_: random (for dig outcomes)
+
 ### Integration
 
 **MTS**:
