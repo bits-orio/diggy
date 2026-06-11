@@ -32,14 +32,19 @@ function ore_veins.materialize(surface, tile_x, tile_y, force)
     local distance = math.sqrt(x * x + y * y)
     local seed = surface.map_gen_settings.seed
 
+    -- Depth pays off twice: tendrils fatten (up to ~3.5x base width) and
+    -- richness grows super-linearly, so deep veins are wide and dense.
+    local width_mult = math.min(1 + distance / 350, 3.5)
+    local richness_mult = 1 + distance / 400
+
     for _, ore in pairs(ORES) do
         if distance > ore.min_depth then
             local noise = Simplex.d2(x * TENDRIL_SCALE, y * TENDRIL_SCALE, seed + ore.seed)
-            if math.abs(noise) < ore.width then
+            if math.abs(noise) < ore.width * width_mult then
                 local created = surface.create_entity {
                     name = ore.name,
                     position = { x, y },
-                    amount = math.floor(ore.base + distance * ore.per_dist),
+                    amount = math.floor((ore.base + distance * ore.per_dist) * richness_mult),
                 }
                 -- First exposure of a vein (no same ore adjacent yet) gets a
                 -- chat notice — scoped to the digger's force, so under MTS

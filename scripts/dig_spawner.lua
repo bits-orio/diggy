@@ -32,13 +32,26 @@ function dig_spawner.tier_for(evolution)
 end
 local tier_for = dig_spawner.tier_for
 
+-- Packs, not singles: size scales with depth and the team's evolution, so
+-- deep digs get ambushed by groups worth taking seriously.
+local function pack_bounds(depth, evolution)
+    local min_pack = 1 + math.floor(depth / 200)
+    local max_pack = 2 + math.floor(depth / 100) + math.floor(evolution * 6)
+    return math.min(min_pack, 8), math.min(max_pack, 14)
+end
+
 local function spawn_units(surface, position, tier, seed, x, y)
-    for i = 1, hash.range(seed, x, y, S_COUNT, 1, 2) do
+    local depth = math.sqrt(position.x * position.x + position.y * position.y)
+    local evolution = game.forces.enemy.get_evolution_factor(surface)
+    local min_pack, max_pack = pack_bounds(depth, evolution)
+    local multiplier = settings.global["diggy-pack-size-multiplier"].value
+    local count = math.max(1, math.floor(hash.range(seed, x, y, S_COUNT, min_pack, max_pack) * multiplier + 0.5))
+    for i = 1, count do
         local name = hash.roll(seed, x, y, S_TYPE + i * 100) < 0.7 and tier.biter or tier.spitter
         -- The dying cover entity still occupies its tile during the event, so
         -- a collision-free spot often doesn't exist yet; spawning at the dig
         -- position is fine — the cover is gone by the end of the tick.
-        local spot = surface.find_non_colliding_position(name, position, 4, 0.5) or position
+        local spot = surface.find_non_colliding_position(name, position, 5, 0.5) or position
         surface.create_entity { name = name, position = spot, force = "enemy" }
     end
 end
