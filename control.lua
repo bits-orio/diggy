@@ -47,6 +47,7 @@ script.on_configuration_changed(function()
     local rebase = {
         ["diggy-dig-biter-chance"] = { old = { [1.0] = true, [0.1] = true }, new = 0.015 },
         ["diggy-dig-nest-chance"] = { old = { [0.1] = true, [0.01] = true }, new = 0.002 },
+        ["diggy-cavern-chance"] = { old = { [0.02] = true }, new = 0.03 },
     }
     for name, r in pairs(rebase) do
         if r.old[settings.global[name].value] then
@@ -103,6 +104,10 @@ end
 for _, name in pairs({ "small-worm-turret", "medium-worm-turret", "big-worm-turret", "behemoth-worm-turret" }) do
     removal_filter[#removal_filter + 1] = { filter = "name", name = name }
 end
+local NESTS = { ["biter-spawner"] = true, ["spitter-spawner"] = true }
+for name in pairs(NESTS) do
+    removal_filter[#removal_filter + 1] = { filter = "name", name = name }
+end
 
 -- Support reach grows with researched diggy-support-reach tiers (per force).
 local function support_reach(force)
@@ -131,6 +136,8 @@ local function on_removed(event)
         on_dig(event)
     elseif WORMS[entity.name] then
         caverns.on_worm_died(entity)
+    elseif NESTS[entity.name] then
+        dig_spawner.on_nest_died(entity)
     else
         local reach = storage.support_reach and storage.support_reach[entity.unit_number]
         if storage.support_reach then storage.support_reach[entity.unit_number] = nil end

@@ -64,7 +64,7 @@ data:extend({
         type = "double-setting",
         setting_type = "runtime-global",
         name = "diggy-cavern-chance",
-        default_value = 0.02,
+        default_value = 0.03,
         minimum_value = 0,
         maximum_value = 1,
         order = "b-f",

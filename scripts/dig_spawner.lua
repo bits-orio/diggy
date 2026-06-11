@@ -43,12 +43,13 @@ local function pack_bounds(depth, evolution)
     return min_pack, math.min(max_pack, 20)
 end
 
-local function spawn_units(surface, position, tier, seed, x, y)
+local function spawn_units(surface, position, tier, seed, x, y, count_override)
     local depth = math.sqrt(position.x * position.x + position.y * position.y)
     local evolution = game.forces.enemy.get_evolution_factor(surface)
     local min_pack, max_pack = pack_bounds(depth, evolution)
     local multiplier = settings.global["diggy-pack-size-multiplier"].value
-    local count = math.max(1, math.floor(hash.range(seed, x, y, S_COUNT, min_pack, max_pack) * multiplier + 0.5))
+    local count = math.max(1,
+        math.floor((count_override or hash.range(seed, x, y, S_COUNT, min_pack, max_pack)) * multiplier + 0.5))
     for i = 1, count do
         local name = hash.roll(seed, x, y, S_TYPE + i * 100) < 0.7 and tier.biter or tier.spitter
         -- The dying cover entity still occupies its tile during the event, so
@@ -104,6 +105,20 @@ function dig_spawner.on_dig(dig)
     else
         spawn_units(surface, position, tier, seed, x, y)
     end
+end
+
+-- Death rattle: a killed nest releases its brood in place — a pack at the
+-- depth's upper bound plus a bonus, so sieging nests is never free.
+function dig_spawner.on_nest_died(entity)
+    local surface = entity.surface
+    local position = entity.position
+    local seed = surface.map_gen_settings.seed
+    local depth = math.sqrt(position.x * position.x + position.y * position.y)
+    local evolution = game.forces.enemy.get_evolution_factor(surface)
+    local _, max_pack = pack_bounds(depth, evolution)
+    local tier = tier_for(evolution)
+    spawn_units(surface, position, tier, seed,
+        math.floor(position.x), math.floor(position.y), max_pack + 3)
 end
 
 -- Expansion would let nests appear without digging; keep it host-controlled
