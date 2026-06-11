@@ -28,6 +28,7 @@ end)
 
 script.on_configuration_changed(function()
     if not storage.stress then collapse.on_init() end
+    storage.support_reach = storage.support_reach or {}
 end)
 
 local COVER = { ["diggy-rock"] = true, ["diggy-tree"] = true }
@@ -75,6 +76,16 @@ for _, name in pairs(collapse.SUPPORT_NAMES) do
     removal_filter[#removal_filter + 1] = { filter = "name", name = name }
 end
 
+-- Support reach grows with researched diggy-support-reach tiers (per force).
+local function support_reach(force)
+    local reach = 4
+    for i = 1, 6 do
+        local tech = force.technologies["diggy-support-reach-" .. i]
+        if tech and tech.researched then reach = reach + 1 end
+    end
+    return reach
+end
+
 local function on_removed(event)
     local entity = event.entity
     if COVER[entity.name] then
@@ -83,7 +94,9 @@ local function on_removed(event)
         end
         on_dig(event)
     else
-        collapse.support_removed(entity.surface, entity.position, entity.name, event.player_index)
+        local reach = storage.support_reach and storage.support_reach[entity.unit_number]
+        if storage.support_reach then storage.support_reach[entity.unit_number] = nil end
+        collapse.support_removed(entity.surface, entity.position, entity.name, event.player_index, reach)
     end
 end
 
@@ -97,7 +110,11 @@ local support_filter = {
 }
 local function on_built(event)
     local entity = event.entity
-    collapse.support_added(entity.surface, entity.position, entity.name)
+    local reach = support_reach(entity.force)
+    if storage.support_reach and entity.unit_number then
+        storage.support_reach[entity.unit_number] = reach
+    end
+    collapse.support_added(entity.surface, entity.position, entity.name, reach)
 end
 script.on_event(defines.events.on_built_entity, on_built, support_filter)
 script.on_event(defines.events.on_robot_built_entity, on_built, support_filter)

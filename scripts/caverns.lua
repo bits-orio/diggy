@@ -84,9 +84,10 @@ local function populate_sanctuary(surface, cx, cy, radius, seed)
         end
     end
     surface.set_tiles(tiles)
-    for _ = 1, 3 do
-        local spot = surface.find_non_colliding_position("fish", { cx + 0.5, cy + 0.5 }, 3, 0.3)
-        if spot then surface.create_entity { name = "fish", position = spot } end
+    -- Place fish directly on the pool tiles; find_non_colliding from land
+    -- tends to fail for water-bound entities.
+    for _, offset in pairs({ { 0.5, 0.5 }, { -0.5, -0.5 }, { 1.5, -0.5 } }) do
+        surface.create_entity { name = "fish", position = { cx + offset[1], cy + offset[2] } }
     end
 end
 

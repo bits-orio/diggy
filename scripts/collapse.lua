@@ -37,12 +37,13 @@ local VOID_REVEAL_STRESS = 1 -- original: out-of-map support strength
 
 collapse.SUPPORT_NAMES = { "diggy-rock", "diggy-tree", "stone-wall", "nuclear-reactor" }
 
--- Disc mask (size 9): three rings, relative weights 2 (ring), 3 (disc),
--- 4 (center), normalized to sum 1. Precomputed once.
-local MASK = {}
-do
-    local n = 9
-    local radius = math.floor(n * 0.5)
+-- Disc masks: three rings, relative weights 2 (ring), 3 (disc), 4 (center),
+-- normalized to sum 1. Base radius 4 (the original's size-9 mask); larger
+-- radii exist for the support-reach research, built on demand.
+local BASE_RADIUS = 4
+local MASKS = {}
+
+local function build_mask(radius)
     local radius_sq = (radius + 0.2) * (radius + 0.2)
     local center_sq = radius_sq / 9
     local disc_sq = radius_sq * 4 / 9
@@ -60,6 +61,7 @@ do
             end
         end
     end
+    local mask = {}
     for x = -radius, radius do
         for y = -radius, radius do
             local d = x * x + y * y
@@ -72,17 +74,31 @@ do
                 w = weights.ring
             end
             if w then
-                MASK[#MASK + 1] = { x = x, y = y, value = w / sum }
+                mask[#mask + 1] = { x = x, y = y, value = w / sum }
             end
         end
     end
+    return mask
 end
+
+local function mask_for(radius)
+    radius = radius or BASE_RADIUS
+    if not MASKS[radius] then
+        MASKS[radius] = build_mask(radius)
+    end
+    return MASKS[radius]
+end
+
+local MASK = mask_for(BASE_RADIUS)
 
 function collapse.on_init()
     storage.stress = {}
     storage.new_tiles = {}
     storage.pending_collapses = {}
     storage.collapse_count = {}
+    -- Reach (mask radius) per placed support, keyed by unit_number: removal
+    -- must undo with the SAME mask it was placed with, or stress corrupts.
+    storage.support_reach = {}
 end
 
 local function cell_key(x, y)
@@ -156,10 +172,16 @@ local function add_cell(surface, x, y, fraction, player_index)
     return value
 end
 
--- Apply the blurred mask around a position.
-local function stress_add(surface, position, factor, player_index)
+-- Apply the blurred mask around a position. A wider radius (support-reach
+-- research) spreads a proportionally larger total so per-cell strength stays
+-- constant — reach grows, protection never thins.
+local function stress_add(surface, position, factor, player_index, radius)
+    local mask = mask_for(radius)
+    if radius and radius ~= BASE_RADIUS then
+        factor = factor * (#mask / #MASK)
+    end
     local x0, y0 = math.floor(position.x), math.floor(position.y)
-    for _, m in pairs(MASK) do
+    for _, m in pairs(mask) do
         add_cell(surface, x0 + m.x, y0 + m.y, m.value * factor, player_index)
     end
 end
@@ -173,17 +195,17 @@ function collapse.tile_revealed(surface, x, y, player_index)
     stress_add(surface, { x = x, y = y }, VOID_REVEAL_STRESS, player_index)
 end
 
-function collapse.support_added(surface, position, name)
+function collapse.support_added(surface, position, name, reach)
     local strength = SUPPORTS[name]
     if strength then
-        stress_add(surface, position, -strength)
+        stress_add(surface, position, -strength, nil, reach)
     end
 end
 
-function collapse.support_removed(surface, position, name, player_index)
+function collapse.support_removed(surface, position, name, player_index, reach)
     local strength = SUPPORTS[name]
     if strength then
-        stress_add(surface, position, strength, player_index)
+        stress_add(surface, position, strength, player_index, reach)
     end
 end
 

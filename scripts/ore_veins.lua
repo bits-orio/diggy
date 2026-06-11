@@ -13,8 +13,8 @@ local TENDRIL_SCALE = 1 / 40
 local ORES = {
     { name = "uranium-ore", seed = 1500, width = 0.022, min_depth = 250, base = 300, per_dist = 2 },
     { name = "crude-oil", seed = 1600, width = 0.018, min_depth = 120, base = 120000, per_dist = 600 },
-    { name = "iron-ore", seed = 1100, width = 0.055, min_depth = CARVE_RADIUS + 4, base = 400, per_dist = 3 },
-    { name = "copper-ore", seed = 1200, width = 0.050, min_depth = 40, base = 400, per_dist = 3 },
+    { name = "iron-ore", seed = 1100, width = 0.055, min_depth = CARVE_RADIUS + 4, base = 500, per_dist = 3.5 },
+    { name = "copper-ore", seed = 1200, width = 0.050, min_depth = 40, base = 350, per_dist = 2.5 },
     { name = "coal", seed = 1300, width = 0.050, min_depth = CARVE_RADIUS + 4, base = 350, per_dist = 2 },
     { name = "stone", seed = 1400, width = 0.040, min_depth = 40, base = 300, per_dist = 2 },
 }

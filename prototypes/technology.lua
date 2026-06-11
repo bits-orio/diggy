@@ -57,4 +57,50 @@ for group_index, group in ipairs(GROUPS) do
     end
 end
 
+-- Support reach: each tier extends how far wall/reactor supports project
+-- their stress relief, letting pillars stand one tile further apart.
+-- Gated chemical → production → utility → space, then two more space tiers.
+local SUPPORT_TIERS = {
+    { gate = "chemical-science-pack", packs = { "automation-science-pack", "logistic-science-pack", "chemical-science-pack" } },
+    { gate = "production-science-pack", packs = { "automation-science-pack", "logistic-science-pack", "chemical-science-pack", "production-science-pack" } },
+    { gate = "utility-science-pack", packs = { "automation-science-pack", "logistic-science-pack", "chemical-science-pack", "production-science-pack", "utility-science-pack" } },
+    { gate = "space-science-pack", packs = { "automation-science-pack", "logistic-science-pack", "chemical-science-pack", "production-science-pack", "utility-science-pack", "space-science-pack" } },
+    { gate = nil, packs = { "automation-science-pack", "logistic-science-pack", "chemical-science-pack", "production-science-pack", "utility-science-pack", "space-science-pack" } },
+    { gate = nil, packs = { "automation-science-pack", "logistic-science-pack", "chemical-science-pack", "production-science-pack", "utility-science-pack", "space-science-pack" } },
+}
+
+for tier, def in ipairs(SUPPORT_TIERS) do
+    local prerequisites = {}
+    if tier == 1 then
+        prerequisites = { def.gate }
+    elseif def.gate then
+        prerequisites = { "diggy-support-reach-" .. (tier - 1), def.gate }
+    else
+        prerequisites = { "diggy-support-reach-" .. (tier - 1) }
+    end
+    local ingredients = {}
+    for _, pack in pairs(def.packs) do
+        ingredients[#ingredients + 1] = { pack, 1 }
+    end
+    technologies[#technologies + 1] = {
+        type = "technology",
+        name = "diggy-support-reach-" .. tier,
+        localised_name = { "", { "technology-name.diggy-support-reach" }, " " .. tier },
+        localised_description = { "technology-description.diggy-support-reach" },
+        icons = {
+            { icon = "__base__/graphics/technology/stone-wall.png", icon_size = 256 },
+        },
+        effects = {
+            { type = "nothing", effect_description = { "technology-effect.diggy-support-reach" } },
+        },
+        prerequisites = prerequisites,
+        unit = {
+            count = 150 * tier,
+            ingredients = ingredients,
+            time = 45,
+        },
+        order = "diggy-s" .. tier,
+    }
+end
+
 data:extend(technologies)

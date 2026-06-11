@@ -32,12 +32,12 @@ function dig_spawner.tier_for(evolution)
 end
 local tier_for = dig_spawner.tier_for
 
--- Packs, not singles: size scales with depth and the team's evolution, so
--- deep digs get ambushed by groups worth taking seriously.
+-- Packs, not singles: rare ambushes (defaults ~1 in 65 digs), but when one
+-- hits it's a group, growing with depth and the team's evolution.
 local function pack_bounds(depth, evolution)
-    local min_pack = 1 + math.floor(depth / 200)
-    local max_pack = 2 + math.floor(depth / 100) + math.floor(evolution * 6)
-    return math.min(min_pack, 8), math.min(max_pack, 14)
+    local min_pack = 2 + math.floor(depth / 150)
+    local max_pack = 4 + math.floor(depth / 80) + math.floor(evolution * 8)
+    return math.min(min_pack, 10), math.min(max_pack, 20)
 end
 
 local function spawn_units(surface, position, tier, seed, x, y)

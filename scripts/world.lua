@@ -12,7 +12,7 @@ local world = {}
 local CARVE_RADIUS = settings.startup["diggy-carve-out-radius"].value
 
 -- Hash stream ids (keep unique across all dig modules).
-local S_FLOOR, S_WALL_TREE, S_STARTER, S_STARTER_ORE = 50, 51, 52, 53
+local S_FLOOR, S_WALL_TREE, S_STARTER, S_STARTER_ORE, S_FISH = 50, 51, 52, 53, 54
 
 local WATER = { scale = 1 / 30, seed = 8800, threshold = 0.78, flood_cap = 200 }
 local TREES = { scale = 1 / 12, seed = 9900, threshold = 0.72 }
@@ -73,6 +73,13 @@ local function flood_water(surface, seed, x, y)
         end
     end
     surface.set_tiles(tiles)
+    -- Lakes hold fish: roughly one per seven water tiles, seed-keyed.
+    for _, t in pairs(tiles) do
+        local tx, ty = t.position[1], t.position[2]
+        if hash.roll(seed, tx, ty, S_FISH) < 0.15 then
+            surface.create_entity { name = "fish", position = { tx + 0.5, ty + 0.5 } }
+        end
+    end
 end
 
 -- Turn a void tile into frontier wall: floor underneath, cover entity on top.
@@ -121,16 +128,24 @@ function world.carve_tile(surface, x, y, force, skip_vein)
     collapse.tile_revealed(surface, x, y)
 end
 
--- Advance the frontier around freshly opened tiles: every adjacent void tile
--- becomes wall.
+-- Advance the frontier around freshly opened tiles: void within TWO steps of
+-- open floor becomes wall, keeping the boundary two layers deep so a single
+-- dig never punches straight through to the void.
 function world.advance_frontier(surface, tiles)
     local seed = surface.map_gen_settings.seed
     for _, t in pairs(tiles) do
         for _, d in pairs(DIRS4) do
-            local nx, ny = t[1] + d[1], t[2] + d[2]
-            ensure_chunk(surface, nx, ny)
-            if is_void(surface, nx, ny) then
-                make_wall(surface, seed, nx, ny)
+            local n1x, n1y = t[1] + d[1], t[2] + d[2]
+            ensure_chunk(surface, n1x, n1y)
+            if is_void(surface, n1x, n1y) then
+                make_wall(surface, seed, n1x, n1y)
+            end
+            for _, d2 in pairs(DIRS4) do
+                local n2x, n2y = n1x + d2[1], n1y + d2[2]
+                ensure_chunk(surface, n2x, n2y)
+                if is_void(surface, n2x, n2y) then
+                    make_wall(surface, seed, n2x, n2y)
+                end
             end
         end
     end
@@ -155,7 +170,7 @@ function build_chunk(surface, area)
     local seed = surface.map_gen_settings.seed
     local lt, rb = area.left_top, area.right_bottom
     local carve_sq = CARVE_RADIUS * CARVE_RADIUS
-    local ring_sq = (CARVE_RADIUS - 1.5) * (CARVE_RADIUS - 1.5)
+    local ring_sq = (CARVE_RADIUS - 2.5) * (CARVE_RADIUS - 2.5)
 
     local tiles, walls, ores = {}, {}, {}
     for x = lt.x, rb.x - 1 do
@@ -192,6 +207,12 @@ function build_chunk(surface, area)
             position = { o[1] + 0.5, o[2] + 0.5 },
             amount = 160,
         }
+    end
+    -- The starter pool comes stocked.
+    if lt.x <= 6 and rb.x > 6 and lt.y <= 0 and rb.y > 0 then
+        for _, p in pairs({ { 5.5, 0.5 }, { 6.5, -0.5 }, { 7.5, 1.5 } }) do
+            surface.create_entity { name = "fish", position = p }
+        end
     end
 end
 
