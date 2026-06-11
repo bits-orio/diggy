@@ -18,16 +18,14 @@ local COLLAPSE_MASK_FACTOR = 16 -- original: collapse_threshold_total_strength
 
 -- Support strengths (original Template.support_beam_entities, adapted:
 -- our wall entities stand in for big-rock/huge-rock, void reveal = out-of-map).
+-- Faithful to the original Diggy's support table (its 3.3 near-threshold is
+-- documented as "just above the threshold of a normal 4 pillar grid"): a
+-- stone-wall grid with 3-tile gaps is the intended safe pattern. The earlier
+-- rock-support doubling was compensating for the plug-rock stress ratchet,
+-- which is fixed; with symmetric accounting the original constants behave.
 local SUPPORTS = {
-    -- The natural wall is the great support: any cell within mask reach of a
-    -- remaining rock face is heavily relieved, which is what creates the
-    -- felt "grace distance" between standing rock and a possible collapse.
-    -- Collapses belong in the middle of wide unsupported clearings — and
-    -- leaving natural rock pillars becomes a real strategy, as in the
-    -- original Diggy. Digging stays symmetric: +4 when a rock dies, -4 when
-    -- the frontier replaces it, so tunneling is still stress-negative.
-    ["diggy-rock"] = 4,
-    ["diggy-tree"] = 4,
+    ["diggy-rock"] = 2,
+    ["diggy-tree"] = 2,
     ["stone-wall"] = 3,
     ["nuclear-reactor"] = 4,
 }
@@ -116,6 +114,8 @@ end
 -- room still under worm protection (no triggers there until the worms die).
 collapse.protection_check = nil
 
+local stress_add -- forward declaration: trigger()'s plug branch uses it
+
 local function trigger(surface, x, y, player_index)
     if not settings.global["diggy-collapse-enabled"].value then return end
     if collapse.protection_check and collapse.protection_check(surface, x, y) then return end
@@ -128,6 +128,11 @@ local function trigger(surface, x, y, player_index)
         if surface.count_entities_filtered { name = collapse.SUPPORT_NAMES, position = { x + 0.5, y + 0.5 }, radius = 0.4 } == 0
             and tile.valid and tile.name ~= "out-of-map" and not tile.name:find("water", 1, true) then
             surface.create_entity { name = "diggy-rock", position = { x + 0.5, y + 0.5 }, force = "neutral" }
+            -- Register the plug like every other spawned rock: without this,
+            -- digging it later was a permanent +4 ratchet — active mining
+            -- zones silently ran far above the steady-state, and collapses
+            -- started firing through proper pillar grids.
+            stress_add(surface, { x = x + 0.5, y = y + 0.5 }, -SUPPORTS["diggy-rock"])
         end
         return
     end
@@ -191,7 +196,7 @@ end
 -- Apply the blurred mask around a position. A wider radius (support-reach
 -- research) spreads a proportionally larger total so per-cell strength stays
 -- constant — reach grows, protection never thins.
-local function stress_add(surface, position, factor, player_index, radius)
+function stress_add(surface, position, factor, player_index, radius)
     local mask = mask_for(radius)
     if radius and radius ~= BASE_RADIUS then
         factor = factor * (#mask / #MASK)
