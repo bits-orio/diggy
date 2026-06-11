@@ -205,6 +205,34 @@ script.on_nth_tick(30, function()
     caverns.on_heartbeat()
 end)
 
+local admin_kit = require("scripts.admin_kit")
+local sim = require("scripts.sim")
+
+commands.add_command("diggy-sim", { "diggy.command-sim" }, function(event)
+    local player = event.player_index and game.get_player(event.player_index)
+    if not player then return end
+    if not player.admin then
+        player.print({ "diggy.admin-only" })
+        return
+    end
+    local param = event.parameter
+    if param == "stop" then
+        sim.stop(player)
+    else
+        sim.start(player, param == "bare")
+    end
+end)
+
+commands.add_command("diggy-kit", { "diggy.command-kit" }, function(event)
+    local player = event.player_index and game.get_player(event.player_index)
+    if not player then return end
+    if not player.admin then
+        player.print({ "diggy.admin-only" })
+        return
+    end
+    admin_kit.give(player)
+end)
+
 commands.add_command("diggy-stress", { "diggy.command-stress" }, function(event)
     local player = event.player_index and game.get_player(event.player_index)
     if player then collapse.debug_overlay(player) end
@@ -223,6 +251,7 @@ end)
 -- animating (countdowns are the only spawner today).
 script.on_event(defines.events.on_tick, function(event)
     pop_text.tick(event.tick)
+    sim.step()
 end)
 
 script.on_event(defines.events.on_chunk_generated, world.on_chunk_generated)
