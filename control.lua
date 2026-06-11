@@ -1,6 +1,8 @@
 local mts = require("scripts.mts")
 local world = require("scripts.world")
 local collapse = require("scripts.collapse")
+local threats = require("scripts.threats")
+require("scripts.integrations.mother")
 local dig_tracker = require("scripts.dig_tracker")
 local dig_spawner = require("scripts.dig_spawner")
 local dig_yield = require("scripts.dig_yield")
@@ -14,6 +16,7 @@ script.on_init(function()
     dig_tracker.on_init()
     charting.on_init()
     collapse.on_init()
+    threats.on_init()
     install_guard.on_init()
     -- Guard first: on a mid-save install the world conversion must not run,
     -- or it would void an existing base.
@@ -55,9 +58,16 @@ local function on_dig(event)
     ore_veins.on_dig(dig)
     treasure.on_dig(dig)
     dig_spawner.on_dig(dig)
+    threats.on_dig(dig)
     caverns.on_dig(dig)
     charting.on_dig(dig)
 end
+
+-- Public API (ADR 0002 door #2): external mods register declarative threat
+-- specs; rolls are seed-keyed like everything else.
+remote.add_interface("diggy-v1", {
+    register_threat = threats.register_external,
+})
 
 -- Covers dig; other support entities (walls, reactors) feed the stress map.
 local removal_filter = {}
