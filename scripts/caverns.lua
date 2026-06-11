@@ -165,6 +165,9 @@ local function arm_room(room)
     force.print({ "diggy.cavern-armed" })
 end
 
+-- Returns radius, opened_count. A "room" that overlaps mostly already-open
+-- space (re-trigger over a hall, old cavern) opens nothing — skip contents,
+-- registration and debt entirely; there is no new room there.
 local function make_room(surface, cx, cy, seed, force, carved)
     local radius = hash.range(seed, cx, cy, S_RADIUS, 6, 14)
     local depth = math.sqrt(cx * cx + cy * cy)
@@ -190,6 +193,9 @@ local function make_room(surface, cx, cy, seed, force, carved)
     local room_tiles, opened = {}, {}
     carve_disc(surface, cx, cy, radius, force, room_tiles, picked.kind == "sanctuary", opened)
     for _, t in pairs(room_tiles) do carved[#carved + 1] = t end
+    if #opened < 10 then
+        return radius, #opened
+    end
 
     -- The room's ceiling debt is loaded NOW, trigger-suppressed (the worms'
     -- protection keeps it dormant), charged ONLY for tiles this room actually
@@ -235,7 +241,7 @@ local function make_room(surface, cx, cy, seed, force, carved)
             storage.cavern_rooms[id] = nil
         end
     end
-    return radius
+    return radius, #opened
 end
 
 -- A guarding worm died: when the last one falls, the room arms.
@@ -307,13 +313,14 @@ function caverns.on_dig(dig)
     local cx, cy = x, y
     local min_x, min_y, max_x, max_y = x, y, x, y
     local carved = {}
+    local opened = {}
 
     for step = 1, length do
         cx, cy = cx + dir[1], cy + dir[2]
         -- 3-wide swath: the tile plus both perpendicular neighbours.
-        carve_tile(surface, cx, cy, force, carved)
-        carve_tile(surface, cx + dir[2], cy + dir[1], force, carved)
-        carve_tile(surface, cx - dir[2], cy - dir[1], force, carved)
+        carve_tile(surface, cx, cy, force, carved, nil, opened)
+        carve_tile(surface, cx + dir[2], cy + dir[1], force, carved, nil, opened)
+        carve_tile(surface, cx - dir[2], cy - dir[1], force, carved, nil, opened)
         min_x, min_y = math.min(min_x, cx), math.min(min_y, cy)
         max_x, max_y = math.max(max_x, cx), math.max(max_y, cy)
         -- Snake: reconsider heading every few steps.
@@ -327,9 +334,9 @@ function caverns.on_dig(dig)
         end
     end
 
-    local radius = 0
+    local radius, room_opened = 0, 0
     if hash.roll(seed, cx, cy, S_ROOM) < 0.4 then
-        radius = make_room(surface, cx, cy, seed, force, carved)
+        radius, room_opened = make_room(surface, cx, cy, seed, force, carved)
         min_x, min_y = math.min(min_x, cx - radius), math.min(min_y, cy - radius)
         max_x, max_y = math.max(max_x, cx + radius), math.max(max_y, cy + radius)
     end
@@ -338,9 +345,12 @@ function caverns.on_dig(dig)
     -- its own frontier instead of bleeding into blackness.
     world.advance_frontier(surface, carved)
 
-    if force then
+    -- Announce only when something actually opened: a tunnel that snaked
+    -- entirely through already-open space exposed nothing and says nothing.
+    local total_opened = #opened + room_opened
+    if force and total_opened >= 6 then
         force.chart(surface, { { min_x - 2, min_y - 2 }, { max_x + 2, max_y + 2 } })
-        force.print({ radius > 0 and "diggy.cavern-room-breached" or "diggy.cavern-breached" })
+        force.print({ room_opened >= 10 and "diggy.cavern-room-breached" or "diggy.cavern-breached" })
     end
 end
 

@@ -80,7 +80,7 @@ script.on_configuration_changed(function()
     end
 end)
 
-local COVER = { ["diggy-rock"] = true, ["diggy-tree"] = true }
+local COVER = { ["diggy-rock"] = true, ["diggy-tree"] = true, ["diggy-rubble"] = true }
 
 -- A dig is the death/mining of a cover entity. Snapshot the context up front:
 -- handlers may invalidate the dying entity as a side effect, so none of them
@@ -103,6 +103,15 @@ local function on_dig(event)
         force = force,
         player_index = event.player_index,
     }
+    -- Rubble re-digs are inert: stress and charting only. The tile's
+    -- seed-keyed outcomes (vein, spawns, cavern, treasure, ore yield) fired
+    -- when it FIRST opened; re-rolling them respawned the same worms and
+    -- re-announced the same tunnels forever.
+    if dig.name == "diggy-rubble" then
+        collapse.support_removed(dig.surface, dig.position, dig.name, dig.player_index)
+        charting.on_dig(dig)
+        return
+    end
     dig_tracker.on_dig(dig)
     world.on_dig(dig) -- stress + frontier advance
     ore_veins.on_dig(dig)

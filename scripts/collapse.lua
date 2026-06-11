@@ -28,6 +28,7 @@ local COLLAPSE_MASK_FACTOR = 16 -- original: collapse_threshold_total_strength
 local SUPPORTS = {
     ["diggy-rock"] = 2,
     ["diggy-tree"] = 2,
+    ["diggy-rubble"] = 2,
     ["stone-wall"] = 5,
     ["nuclear-reactor"] = 6,
 }
@@ -42,7 +43,7 @@ local TILE_SUPPORTS = {
 }
 local VOID_REVEAL_STRESS = 1 -- original: out-of-map support strength
 
-collapse.SUPPORT_NAMES = { "diggy-rock", "diggy-tree", "stone-wall", "nuclear-reactor" }
+collapse.SUPPORT_NAMES = { "diggy-rock", "diggy-tree", "diggy-rubble", "stone-wall", "nuclear-reactor" }
 
 -- Disc masks: three rings, relative weights 2 (ring), 3 (disc), 4 (center),
 -- normalized to sum 1. Base radius 4 (the original's size-9 mask); larger
@@ -129,12 +130,12 @@ local function trigger(surface, x, y, player_index)
         local tile = surface.get_tile(x, y)
         if surface.count_entities_filtered { name = collapse.SUPPORT_NAMES, position = { x + 0.5, y + 0.5 }, radius = 0.4 } == 0
             and tile.valid and tile.name ~= "out-of-map" and not tile.name:find("water", 1, true) then
-            surface.create_entity { name = "diggy-rock", position = { x + 0.5, y + 0.5 }, force = "neutral" }
+            surface.create_entity { name = "diggy-rubble", position = { x + 0.5, y + 0.5 }, force = "neutral" }
             -- Register the plug like every other spawned rock: without this,
             -- digging it later was a permanent +4 ratchet — active mining
             -- zones silently ran far above the steady-state, and collapses
             -- started firing through proper pillar grids.
-            stress_add(surface, { x = x + 0.5, y = y + 0.5 }, -SUPPORTS["diggy-rock"])
+            stress_add(surface, { x = x + 0.5, y = y + 0.5 }, -SUPPORTS["diggy-rubble"])
         end
         return
     end
@@ -339,10 +340,10 @@ local function execute(pending)
                 local tile = surface.get_tile(tx, ty)
                 if not supported and tile.valid and tile.name ~= "out-of-map"
                     and not tile.name:find("water", 1, true) then
-                    surface.create_entity { name = "diggy-rock", position = { tx + 0.5, ty + 0.5 }, force = "neutral" }
+                    surface.create_entity { name = "diggy-rubble", position = { tx + 0.5, ty + 0.5 }, force = "neutral" }
                     -- Fallen rock supports the ceiling again (the original
                     -- registered collapse rocks through its placement events).
-                    stress_add(surface, { x = tx + 0.5, y = ty + 0.5 }, -SUPPORTS["diggy-rock"])
+                    stress_add(surface, { x = tx + 0.5, y = ty + 0.5 }, -SUPPORTS["diggy-rubble"])
                     rocks = rocks + 1
                 end
             end
@@ -438,8 +439,8 @@ function collapse.sparse_collapse(surface, cells, force, seed)
                 if not supported and tile.valid and tile.name ~= "out-of-map"
                     and not tile.name:find("water", 1, true)
                     and hash.roll(seed, tx, ty, 80) < 0.55 then
-                    surface.create_entity { name = "diggy-rock", position = { tx + 0.5, ty + 0.5 }, force = "neutral" }
-                    stress_add(surface, { x = tx + 0.5, y = ty + 0.5 }, -SUPPORTS["diggy-rock"])
+                    surface.create_entity { name = "diggy-rubble", position = { tx + 0.5, ty + 0.5 }, force = "neutral" }
+                    stress_add(surface, { x = tx + 0.5, y = ty + 0.5 }, -SUPPORTS["diggy-rubble"])
                     rocks = rocks + 1
                 end
             end

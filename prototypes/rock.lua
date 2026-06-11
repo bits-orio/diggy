@@ -37,4 +37,16 @@ for _, source in pairs({ "big-rock", "huge-rock" }) do
 end
 rock.pictures = variations
 
-data:extend({ rock })
+-- Collapse rubble: identical wall-grade cover, but a DISTINCT prototype so
+-- the dig pipeline can tell re-digs from first digs. Mining rubble must
+-- never re-roll the tile's seed-keyed outcomes (veins, spawns, caverns,
+-- treasure) — those fired when the tile was first opened.
+local rubble = table.deepcopy(rock)
+rubble.name = "diggy-rubble"
+rubble.map_color = { r = 0.16, g = 0.13, b = 0.11 }
+rubble.minable = {
+    mining_time = 1.0,
+    results = { { type = "item", name = "stone", amount_min = 2, amount_max = 5 } },
+}
+
+data:extend({ rock, rubble })
