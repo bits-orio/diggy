@@ -4,7 +4,9 @@
 local rock = table.deepcopy(data.raw["simple-entity"]["big-rock"])
 rock.name = "diggy-rock"
 rock.flags = { "placeable-neutral", "not-deconstructable" }
-rock.collision_box = { { -0.45, -0.45 }, { 0.45, 0.45 } }
+-- Full-tile hitbox: the wall is script-placed (no autoplace packing to
+-- appease anymore), so the box covers exactly the tile the rock occupies.
+rock.collision_box = { { -0.49, -0.49 }, { 0.49, 0.49 } }
 rock.selection_box = { { -0.5, -0.5 }, { 0.5, 0.5 } }
 rock.minable = {
     mining_time = 1.5,
@@ -14,14 +16,22 @@ rock.map_color = { r = 0.20, g = 0.16, b = 0.13 }
 rock.max_health = 500
 rock.dying_explosion = "rock-damaged-explosion"
 
--- Mixed big/huge rock sprites at natural size: collision stays one tile so
--- autoplace packs a rock per tile, while the oversized sprites overlap their
--- neighbours and hide the terrain and ore beneath until dug (the Mountain
--- Fortress trick). Selection stays a precise single tile.
+-- Mixed big/huge rock sprites, scaled to ~1.5 tiles so the visible rock
+-- roughly matches its full-tile hitbox (the wall is a contiguous line of
+-- per-tile rocks, so moderate overlap still reads as solid mass).
 local variations = {}
 for _, source in pairs({ "big-rock", "huge-rock" }) do
     local pictures = data.raw["simple-entity"][source].pictures
     for _, picture in pairs(table.deepcopy(pictures)) do
+        local sprites = picture.layers or { picture }
+        for _, sprite in pairs(sprites) do
+            sprite.scale = (sprite.scale or 1) * 0.7
+            if sprite.shift then
+                local sx = sprite.shift[1] or sprite.shift.x or 0
+                local sy = sprite.shift[2] or sprite.shift.y or 0
+                sprite.shift = { sx * 0.7, sy * 0.7 }
+            end
+        end
         variations[#variations + 1] = picture
     end
 end

@@ -52,6 +52,13 @@ data:extend({
         order = "c-b",
     },
     {
+        type = "bool-setting",
+        setting_type = "runtime-global",
+        name = "diggy-crushed-remains",
+        default_value = false,
+        order = "c-c",
+    },
+    {
         type = "double-setting",
         setting_type = "runtime-global",
         name = "diggy-treasure-chance",

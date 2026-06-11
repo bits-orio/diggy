@@ -59,7 +59,7 @@ The cave-in that re-seals an area with rock cover when stress exceeds the thresh
 _Avoid_: cave-in (in code; fine in prose)
 
 **Crushed remains**:
-A non-colliding corpse entity left where a building was crushed by a collapse, holding its inventories. It is buried under the new rock cover and lootable after re-digging.
+A non-colliding corpse entity left where a building was crushed by a collapse, holding its inventories — buried and lootable after re-digging. Opt-in (host setting, off by default): normally crushed buildings and their contents are simply destroyed.
 _Avoid_: spilled items, wreck
 
 ### Difficulty

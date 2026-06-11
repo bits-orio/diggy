@@ -13,7 +13,17 @@ local caverns = require("scripts.caverns")
 local charting = require("scripts.charting")
 local install_guard = require("scripts.install_guard")
 
+-- No crashed spaceship in a cave: disable freeplay's crash site and intro.
+-- (Mods init before the freeplay scenario reads these flags.)
+local function disable_crash_site()
+    if remote.interfaces["freeplay"] then
+        pcall(remote.call, "freeplay", "set_disable_crashsite", true)
+        pcall(remote.call, "freeplay", "set_skip_intro", true)
+    end
+end
+
 script.on_init(function()
+    disable_crash_site()
     dig_tracker.on_init()
     charting.on_init()
     collapse.on_init()
@@ -38,6 +48,16 @@ script.on_configuration_changed(function()
     for _, player in pairs(game.players) do
         local frame = player.gui.screen["diggy-cavern-countdown"]
         if frame then frame.destroy() end
+    end
+
+    -- Clear crash-site debris from saves created before it was disabled.
+    local nauvis = game.surfaces["nauvis"]
+    if nauvis and nauvis.valid then
+        for _, entity in pairs(nauvis.find_entities_filtered { area = { { -80, -80 }, { 80, 80 } } }) do
+            if entity.valid and entity.name:find("crash%-site") then
+                entity.destroy()
+            end
+        end
     end
 
     -- Saves store runtime settings, so defaults shipped by old releases stick

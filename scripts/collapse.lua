@@ -21,8 +21,11 @@ local COLLAPSE_MASK_FACTOR = 16 -- original: collapse_threshold_total_strength
 local SUPPORTS = {
     ["diggy-rock"] = 2,
     ["diggy-tree"] = 2,
-    ["stone-wall"] = 3,
-    ["nuclear-reactor"] = 4,
+    -- Player supports punch above the natural wall: a pillar should clearly
+    -- out-support the rock it replaced. (Stress is position-based; hitbox
+    -- size plays no part.)
+    ["stone-wall"] = 5,
+    ["nuclear-reactor"] = 7,
 }
 local TILE_SUPPORTS = {
     ["stone-path"] = 0.03,
@@ -242,13 +245,18 @@ end
 
 -- Collapse execution ---------------------------------------------------------
 
--- Crush an entity: inventories go into a buried character-corpse (CONTEXT.md
--- "Crushed remains"), then the entity dies.
+-- Crush an entity: with crushed-remains recovery enabled (off by default),
+-- inventories go into a buried character-corpse (CONTEXT.md "Crushed
+-- remains"); otherwise the building and its contents are simply destroyed.
 local function crush(surface, entity)
     -- Characters just die: their vanilla death corpse already preserves the
     -- full inventory. Extracting it first created a SECOND corpse with
     -- copies of everything — free item duplication per collapse death.
     if entity.type == "character" then
+        entity.die()
+        return
+    end
+    if not settings.global["diggy-crushed-remains"].value then
         entity.die()
         return
     end

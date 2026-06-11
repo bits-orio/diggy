@@ -4,7 +4,7 @@
 local tree = table.deepcopy(data.raw.tree["tree-02"])
 tree.name = "diggy-tree"
 tree.flags = { "placeable-neutral", "not-deconstructable", "breaths-air" }
-tree.collision_box = { { -0.45, -0.45 }, { 0.45, 0.45 } }
+tree.collision_box = { { -0.49, -0.49 }, { 0.49, 0.49 } }
 tree.selection_box = { { -0.5, -0.5 }, { 0.5, 0.5 } }
 tree.minable = {
     mining_time = 0.5,
