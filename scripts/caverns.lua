@@ -143,7 +143,10 @@ local function arm_room(room)
     if not surface or not surface.valid then return end
     room.protected = false
 
-    local hot = collapse.arm_area(surface, room.tiles)
+    -- Slightly under full reveal stress: bare big rooms still fail, but the
+    -- deficit is small enough that pillars placed during the countdown can
+    -- realistically push the ceiling back under threshold.
+    local hot = collapse.arm_area(surface, room.tiles, 0.9)
     room.tiles = nil -- no longer needed; don't bloat the save
     if #hot == 0 then return end
 
@@ -255,9 +258,16 @@ function caverns.on_heartbeat()
         elseif cd.at_tick <= now then
             table.remove(countdowns, i)
             local force = game.forces[cd.force_index]
-            pop_text.spawn(surface, { x = cd.cx + 0.5, y = cd.cy + 0.5 },
-                { "diggy.cavern-collapse-pop" }, { r = 1, g = 0.1, b = 0.1 }, force)
-            collapse.sparse_collapse(surface, cd.cells, force, surface.map_gen_settings.seed)
+            local rocks = collapse.sparse_collapse(surface, cd.cells, force, surface.map_gen_settings.seed)
+            if rocks > 0 then
+                pop_text.spawn(surface, { x = cd.cx + 0.5, y = cd.cy + 0.5 },
+                    { "diggy.cavern-collapse-pop" }, { r = 1, g = 0.1, b = 0.1 }, force)
+            else
+                -- The players shored it up in time.
+                pop_text.spawn(surface, { x = cd.cx + 0.5, y = cd.cy + 0.5 },
+                    { "diggy.cavern-held-pop" }, { r = 0.3, g = 1, b = 0.3 }, force)
+                if force then force.print({ "diggy.cavern-held" }) end
+            end
         else
             local secs = math.ceil((cd.at_tick - now) / 60)
             if secs ~= cd.last_secs then

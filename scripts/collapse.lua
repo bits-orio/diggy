@@ -362,12 +362,13 @@ end
 -- Cavern activation: batch-load the room's deferred reveal stress (+1 per
 -- carved tile, triggers suppressed) and return the cells that ended over the
 -- collapse threshold — the cavern's failure zone.
-function collapse.arm_area(surface, tiles)
+function collapse.arm_area(surface, tiles, factor)
+    factor = factor or VOID_REVEAL_STRESS
     suppress_triggers = true
     local hot = {}
     for _, t in pairs(tiles) do
         for _, m in pairs(MASK) do
-            local value = add_cell(surface, t[1] + m.x, t[2] + m.y, m.value * VOID_REVEAL_STRESS)
+            local value = add_cell(surface, t[1] + m.x, t[2] + m.y, m.value * factor)
             if value > STRESS_THRESHOLD then
                 local cx = 2 * math.floor((t[1] + m.x) * 0.5)
                 local cy = 2 * math.floor((t[2] + m.y) * 0.5)
@@ -383,7 +384,20 @@ end
 
 -- Cavern collapse: like execute(), but over given cells and deliberately
 -- sparse — an ancient ceiling sheds about half its mass, not all of it.
+-- The failure zone is re-checked against the LIVE stress map at execution:
+-- pillars placed during the countdown push cells back under threshold and
+-- those cells hold. Enough pillars and nothing falls at all.
 function collapse.sparse_collapse(surface, cells, force, seed)
+    local map = storage.stress[surface.index] or {}
+    local live = {}
+    for _, cell in pairs(cells) do
+        if (map[cell_key(cell.x, cell.y)] or 0) > STRESS_THRESHOLD then
+            live[#live + 1] = cell
+        end
+    end
+    cells = live
+    if #cells == 0 then return 0 end
+
     local rocks = 0
     for _, cell in pairs(cells) do
         for dx = 0, 1 do
