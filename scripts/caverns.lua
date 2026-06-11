@@ -3,7 +3,7 @@
 -- tiles materialize veins and chart, but per-tile spawn/treasure rolls are
 -- skipped — the room's contents are the sole source of its danger and loot.
 local hash = require("scripts.lib.hash")
-local ore_veins = require("scripts.ore_veins")
+local world = require("scripts.world")
 local treasure = require("scripts.treasure")
 local dig_spawner = require("scripts.dig_spawner")
 
@@ -24,28 +24,19 @@ local ROOM_TYPES = {
     { kind = "sanctuary", min_depth = 180, weight = 8 },
 }
 
--- Remove cover on a tile without raising dig events (no recursion), then run
--- the carve-reveal pipeline: veins materialize, nothing else rolls.
-local function carve_tile(surface, x, y, force, materialize)
-    local cover = surface.find_entities_filtered {
-        name = { "diggy-rock", "diggy-tree" },
-        area = { { x + 0.05, y + 0.05 }, { x + 0.95, y + 0.95 } },
-    }
-    if #cover == 0 then return end
-    for _, entity in pairs(cover) do
-        entity.destroy()
-    end
-    if materialize then
-        ore_veins.materialize(surface, x, y, force)
-    end
+-- Carving delegates to world.carve_tile (entity removal + void→floor + vein)
+-- and records each tile so the frontier can be advanced around the cavern.
+local function carve_tile(surface, x, y, force, carved, skip_vein)
+    world.carve_tile(surface, x, y, force, skip_vein)
+    carved[#carved + 1] = { x, y }
 end
 
-local function carve_disc(surface, cx, cy, radius, force, materialize)
+local function carve_disc(surface, cx, cy, radius, force, carved, skip_vein)
     for x = cx - radius, cx + radius do
         for y = cy - radius, cy + radius do
             local dx, dy = x - cx, y - cy
             if dx * dx + dy * dy <= radius * radius then
-                carve_tile(surface, x, y, force, materialize)
+                carve_tile(surface, x, y, force, carved, skip_vein)
             end
         end
     end
@@ -99,7 +90,7 @@ local function populate_sanctuary(surface, cx, cy, radius, seed)
     end
 end
 
-local function make_room(surface, cx, cy, seed, force)
+local function make_room(surface, cx, cy, seed, force, carved)
     local radius = hash.range(seed, cx, cy, S_RADIUS, 6, 14)
     local depth = math.sqrt(cx * cx + cy * cy)
 
@@ -121,7 +112,7 @@ local function make_room(surface, cx, cy, seed, force)
     end
 
     -- Sanctuaries replace terrain, so veins would end up under water; skip them.
-    carve_disc(surface, cx, cy, radius, force, picked.kind ~= "sanctuary")
+    carve_disc(surface, cx, cy, radius, force, carved, picked.kind == "sanctuary")
     if picked.kind == "nest" then
         populate_nest(surface, cx, cy, radius, seed)
     elseif picked.kind == "hoard" then
@@ -148,12 +139,14 @@ function caverns.on_dig(dig)
     local length = hash.range(seed, x, y, S_LEN, 12, 40)
     local cx, cy = x, y
     local min_x, min_y, max_x, max_y = x, y, x, y
+    local carved = {}
 
     for step = 1, length do
         cx, cy = cx + dir[1], cy + dir[2]
-        -- 2-wide swath: the tile plus its perpendicular neighbour.
-        carve_tile(surface, cx, cy, force, true)
-        carve_tile(surface, cx + dir[2], cy + dir[1], force, true)
+        -- 3-wide swath: the tile plus both perpendicular neighbours.
+        carve_tile(surface, cx, cy, force, carved)
+        carve_tile(surface, cx + dir[2], cy + dir[1], force, carved)
+        carve_tile(surface, cx - dir[2], cy - dir[1], force, carved)
         min_x, min_y = math.min(min_x, cx), math.min(min_y, cy)
         max_x, max_y = math.max(max_x, cx), math.max(max_y, cy)
         -- Snake: reconsider heading every few steps.
@@ -169,10 +162,14 @@ function caverns.on_dig(dig)
 
     local radius = 0
     if hash.roll(seed, cx, cy, S_ROOM) < 0.4 then
-        radius = make_room(surface, cx, cy, seed, force)
+        radius = make_room(surface, cx, cy, seed, force, carved)
         min_x, min_y = math.min(min_x, cx - radius), math.min(min_y, cy - radius)
         max_x, max_y = math.max(max_x, cx + radius), math.max(max_y, cy + radius)
     end
+
+    -- Wall off every void tile touching the carved space — the cavern gets
+    -- its own frontier instead of bleeding into blackness.
+    world.advance_frontier(surface, carved)
 
     if force then
         force.chart(surface, { { min_x - 2, min_y - 2 }, { max_x + 2, max_y + 2 } })

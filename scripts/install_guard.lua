@@ -3,11 +3,10 @@
 local install_guard = {}
 
 function install_guard.on_init()
-    local nauvis = game.surfaces["nauvis"]
-    -- On a fresh map, the origin chunk is not generated yet when on_init runs;
-    -- if it is generated but holds no rock cover, this mod was added mid-save.
-    if nauvis.is_chunk_generated({ 0, 0 })
-        and nauvis.count_entities_filtered { name = "diggy-rock", limit = 1 } == 0 then
+    -- A fresh map runs on_init at tick 0 (during creation); a mod added to an
+    -- existing save runs it later. Crucial: world.on_init must NOT void an
+    -- existing base, so this flag is checked before any world conversion.
+    if game.tick > 0 then
         storage.mid_save_install = true
     end
 end

@@ -1,6 +1,6 @@
 # Pre-generated world behind rock cover, not runtime void conversion
 
-Status: accepted (spike passed 2026-06-10 — see ../SPIKE.md); ore layer amended by ADR 0004
+Status: superseded by ADR-0007 (ore layer had already moved to ADR 0004; the playtest case for the void model won out)
 
 The original RedMew Diggy scenario fills all chunks with `out-of-map` tiles and *creates* terrain at dig time via runtime Lua noise. We invert this: nauvis's map generation is redefined at data stage (2.0 noise expressions) so the full world — cave floors, ore tendrils, water pockets — exists from chunk generation, hidden under solid autoplaced rock-cover entities. Digging *reveals* terrain instead of creating it.
 

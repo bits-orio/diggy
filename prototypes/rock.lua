@@ -1,6 +1,6 @@
--- The rock cover: a tile-sized minable entity that autoplace packs solid
--- (spike-verified: anything larger leaves walkable gaps). Bots cannot
--- deconstruct it — digging is by hand or by damage.
+-- The frontier-wall rock: a tile-sized minable entity spawned at runtime
+-- wherever the wall advances (ADR 0007). Bots cannot deconstruct it —
+-- digging is by hand or by damage.
 local rock = table.deepcopy(data.raw["simple-entity"]["big-rock"])
 rock.name = "diggy-rock"
 rock.flags = { "placeable-neutral", "not-deconstructable" }

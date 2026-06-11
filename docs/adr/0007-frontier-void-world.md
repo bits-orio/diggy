@@ -1,0 +1,7 @@
+# Frontier void world: the map is built from out-of-map at runtime
+
+Supersedes ADR 0001. Chunks generate as `out-of-map` (engine-native void: black, impassable, unchartable as anything but darkness). Cover entities exist only as the one-layer **frontier wall**: digging a wall entity opens its floor, materializes its vein, and converts adjacent void tiles into new wall (floor tile + rock/tree, noise-picked). Caverns carve floor against blackness. Water pools materialize on first contact via bounded flood-fill of the water noise blob. The spawn carve-out is built at chunk generation. Everything remains seed-keyed (ADR 0005): floor variants, wall kinds, pools, starter ore.
+
+Why ADR 0001 fell: its rationale eroded decision by decision — ore moved to dig time (ADR 0004), ore-window pockets were removed, the map was forced dark via chart control. What remained pre-generated was flat dirt and ~900k cosmetic rock entities, while the cost became acute in playtests: no void drama, cavern breaches invisible under overlapping rock sprites, the world visibly "existing" everywhere. The frontier model is the original scenario's architecture, recovers the dramatic reveal that defines Diggy, and cuts cover entity counts ~10x (walls only at the frontier).
+
+Costs accepted: the new-game map preview shows meaningless flat terrain (the void is applied at runtime), and map-gen sliders do nothing — both acceptable for a total conversion. Collapse design note: collapses re-fill with wall entities on persistent floor, never with void, so crushed remains stay diggable.

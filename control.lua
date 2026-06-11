@@ -1,3 +1,4 @@
+local world = require("scripts.world")
 local dig_tracker = require("scripts.dig_tracker")
 local dig_spawner = require("scripts.dig_spawner")
 local dig_yield = require("scripts.dig_yield")
@@ -11,6 +12,11 @@ script.on_init(function()
     dig_tracker.on_init()
     charting.on_init()
     install_guard.on_init()
+    -- Guard first: on a mid-save install the world conversion must not run,
+    -- or it would void an existing base.
+    if not storage.mid_save_install then
+        world.on_init()
+    end
     dig_spawner.apply_expansion_setting()
 end)
 
@@ -30,6 +36,7 @@ local function on_dig(event)
         player_index = event.player_index,
     }
     dig_tracker.on_dig(dig)
+    world.on_dig(dig)
     ore_veins.on_dig(dig)
     treasure.on_dig(dig)
     dig_spawner.on_dig(dig)
@@ -46,6 +53,9 @@ script.on_event(defines.events.on_player_mined_entity, function(event)
     on_dig(event)
 end, cover_filter)
 script.on_event(defines.events.on_entity_died, on_dig, cover_filter)
+
+script.on_event(defines.events.on_chunk_generated, world.on_chunk_generated)
+script.on_event(defines.events.on_chunk_charted, world.on_chunk_charted)
 
 script.on_event(defines.events.on_player_created, function(event)
     charting.on_player_created(event)

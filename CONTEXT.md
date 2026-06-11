@@ -7,35 +7,39 @@ A standalone Factorio mod recreating RedMew's Diggy scenario: the world is solid
 ### World
 
 **Diggy world**:
-The nauvis surface as redefined by this mod — fully pre-generated terrain (floors, ore, water pockets) hidden under solid rock cover.
+The nauvis surface as redefined by this mod — out-of-map void everywhere, built into caves at runtime as the frontier wall is dug. Only revealed space exists.
 _Avoid_: diggy surface, cave surface
 
-**Rock cover**:
-The solid mass of minable rock entities autoplaced over all undug terrain. Mining it is how the world is revealed.
-_Avoid_: walls, void rocks
+**Void**:
+Engine-native `out-of-map` beyond the frontier wall: black, impassable, holding nothing. Digging converts void into world.
+_Avoid_: unexplored, fog
+
+**Frontier wall**:
+The single layer of minable cover entities (rocks, tree patches) standing between revealed space and the void. Digging a wall entity opens its floor and advances the wall into adjacent void.
+_Avoid_: rock cover (ADR-0001-era term), walls
 
 **Tree cover**:
-Tiny patches of dense trees mixed into the rock cover. Same rules as rock (bot-proof, hides terrain, counts as a dig) but quicker to mine — and flammable.
+Tiny noise-picked patches of dense trees in the frontier wall. Same rules as rock (bot-proof, counts as a dig) but quicker to mine — and flammable.
 _Avoid_: forest
 
 **Dig**:
-The death of a cover entity (rock or tree) — by hand-mining or by damage (explosives, fire, vehicles, gunfire) — revealing the terrain beneath and rolling for veins, treasure, and dig spawns. Construction robots cannot deconstruct cover; explosives and fire are the automation paths for mass digging.
-_Avoid_: excavate, void removal (the scenario-era term — no longer accurate)
+The death of a frontier-wall entity — by hand-mining or by damage (explosives, fire, vehicles, gunfire) — opening its floor, rolling for veins, treasure, and dig spawns, and advancing the wall. Construction robots cannot deconstruct the wall; explosives and fire are the automation paths for mass digging.
+_Avoid_: excavate, void removal (the scenario-era term)
 
 **Ore vein**:
 Ore that materializes at the dug tile, computed from noise seeded by the map seed — deterministic, but not existing as entities until dug. Veins never pre-generate (except the starter patch).
 _Avoid_: ore patch, scattered resources (scenario-era term)
 
 **Starter patch**:
-The only pre-generated ore: a light-density mix inside the spawn carve-out, enough to hand-mine basic defenses before the first dig.
+A light-density seed-keyed ore mix scattered inside the spawn carve-out when it is built, enough to hand-mine basic defenses before the first dig.
 
 **Spawn carve-out**:
 The small pre-revealed safe area at the map origin where a team starts, ringed by rock cover.
 _Avoid_: starting zone (the scenario-era term)
 
-**Pocket**:
-A pre-generated open space inside the rock cover (water or treasure pocket), sealed until dug into. Pockets are always benign — hostiles never pre-exist (see Dig spawn).
-_Avoid_: room (scenario-era term), nest pocket (rejected design)
+**Water pool**:
+A noise-defined water blob that materializes (bounded flood-fill) when digging first touches it. Pools are benign — hostiles never pre-exist (see Dig spawn).
+_Avoid_: pocket (ADR-0001-era term), lake
 
 **Treasure**:
 Loot containers sealed inside the rock cover or pockets, found by digging. There is no coin currency and no market in this mod.
