@@ -54,7 +54,9 @@ jobs:
           # mod name is unlikely to change but tying everything to the tag
           # keeps this workflow self-consistent.
           NAME=$(git show "${{ steps.tag.outputs.tag }}:info.json" | jq -r .name)
+          TITLE=$(git show "${{ steps.tag.outputs.tag }}:info.json" | jq -r .title)
           echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "title=${TITLE}" >> "$GITHUB_OUTPUT"
 
       - name: Verify API key is configured
         if: ${{ env.FACTORIO_API_KEY == '' }}
@@ -94,7 +96,7 @@ jobs:
         run: |
           PORTAL_URL="https://mods.factorio.com/mod/${MOD_NAME}"
           PAYLOAD=$(jq -n \
-            --arg title "Multi-Team Support v${RELEASE_VERSION} is live on the mod portal" \
+            --arg title "${RELEASE_TITLE} v${RELEASE_VERSION} is live on the mod portal" \
             --arg desc  "Download or update in-game from the mods menu." \
             --arg url   "$PORTAL_URL" \
             '{

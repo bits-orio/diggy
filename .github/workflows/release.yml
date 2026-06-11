@@ -26,8 +26,10 @@ jobs:
         id: info
         run: |
           NAME=$(jq -r .name info.json)
+          TITLE=$(jq -r .title info.json)
           VERSION=$(jq -r .version info.json)
           echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "title=${TITLE}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "folder=${NAME}_${VERSION}" >> "$GITHUB_OUTPUT"
 
@@ -164,11 +166,12 @@ jobs:
           # assignment prematurely and the rest becomes bash commands.
           # Env vars go through the OS environment — no bash parsing pitfalls.
           RELEASE_VERSION: ${{ steps.info.outputs.version }}
+          RELEASE_TITLE:   ${{ steps.info.outputs.title }}
           RELEASE_URL:     ${{ steps.release.outputs.url }}
           RELEASE_NOTES:   ${{ steps.notes.outputs.notes }}
         run: |
           PAYLOAD=$(jq -n \
-            --arg title "Multi-Team Support v${RELEASE_VERSION} Released!" \
+            --arg title "${RELEASE_TITLE} v${RELEASE_VERSION} Released!" \
             --arg desc  "$RELEASE_NOTES" \
             --arg url   "$RELEASE_URL" \
             '{
@@ -233,11 +236,12 @@ jobs:
         if: ${{ steps.upload.outcome == 'success' && env.DISCORD_ANNOUNCEMENTS_WEBHOOK != '' }}
         env:
           RELEASE_VERSION: ${{ steps.info.outputs.version }}
+          RELEASE_TITLE:   ${{ steps.info.outputs.title }}
           MOD_NAME: ${{ steps.info.outputs.name }}
         run: |
           PORTAL_URL="https://mods.factorio.com/mod/${MOD_NAME}"
           PAYLOAD=$(jq -n \
-            --arg title "Multi-Team Support v${RELEASE_VERSION} is live on the mod portal" \
+            --arg title "${RELEASE_TITLE} v${RELEASE_VERSION} is live on the mod portal" \
             --arg desc  "Download or update in-game from the mods menu." \
             --arg url   "$PORTAL_URL" \
             '{
