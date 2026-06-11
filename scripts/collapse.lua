@@ -104,6 +104,8 @@ function collapse.on_init()
     storage.new_tiles = {}
     storage.pending_collapses = {}
     storage.collapse_count = {}
+    -- Ring buffer of recent collapse positions (diagnostics / sim verdicts).
+    storage.collapse_log = {}
     -- Reach (mask radius) per placed support, keyed by unit_number: removal
     -- must undo with the SAME mask it was placed with, or stress corrupts.
     storage.support_reach = {}
@@ -352,6 +354,10 @@ local function execute(pending)
 
     if rocks > 0 then
         storage.collapse_count[pending.surface_index] = (storage.collapse_count[pending.surface_index] or 0) + 1
+        storage.collapse_log = storage.collapse_log or {}
+        storage.collapse_log[#storage.collapse_log + 1] =
+            { surface_index = pending.surface_index, x = pending.x, y = pending.y, tick = game.tick }
+        if #storage.collapse_log > 60 then table.remove(storage.collapse_log, 1) end
         local force = pending.player_index and game.get_player(pending.player_index).force
             or mts.surface_owner_force(surface)
         force.print({ "diggy.cave-collapse" })
@@ -446,8 +452,12 @@ function collapse.sparse_collapse(surface, cells, force, seed)
             end
         end
     end
-    if rocks > 0 and force then
-        force.print({ "diggy.cavern-collapsed" })
+    if rocks > 0 then
+        storage.collapse_log = storage.collapse_log or {}
+        storage.collapse_log[#storage.collapse_log + 1] =
+            { surface_index = surface.index, x = cells[1] and cells[1].x or 0, y = cells[1] and cells[1].y or 0, tick = game.tick }
+        if #storage.collapse_log > 60 then table.remove(storage.collapse_log, 1) end
+        if force then force.print({ "diggy.cavern-collapsed" }) end
     end
     return rocks
 end

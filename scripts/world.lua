@@ -190,7 +190,7 @@ function build_chunk(surface, area)
     local carve_sq = CARVE_RADIUS * CARVE_RADIUS
     local ring_sq = (CARVE_RADIUS - 2.5) * (CARVE_RADIUS - 2.5)
 
-    local tiles, walls, ores = {}, {}, {}
+    local tiles, walls, ores, homestead = {}, {}, {}, {}
     for x = lt.x, rb.x - 1 do
         for y = lt.y, rb.y - 1 do
             local d_sq = x * x + y * y
@@ -201,6 +201,7 @@ function build_chunk(surface, area)
                 tiles[#tiles + 1] = { name = "water", position = { x, y } }
             else
                 tiles[#tiles + 1] = { name = floor_tile(seed, x, y), position = { x, y } }
+                homestead[#homestead + 1] = { x, y }
                 if d_sq > ring_sq then
                     walls[#walls + 1] = { x, y }
                 elseif hash.roll(seed, x, y, S_STARTER) < 0.12 and d_sq > 4 then
@@ -226,6 +227,14 @@ function build_chunk(surface, area)
             amount = 160,
         }
     end
+    -- The homestead is reinforced: a permanent foundation-relief layer over
+    -- the carve-out, so the first expansion ring around spawn (uncharged
+    -- interior = no rock support left on that side) doesn't run hot exactly
+    -- when players have the least infrastructure.
+    if #homestead > 0 then
+        collapse.arm_area(surface, homestead, -0.4)
+    end
+
     -- The starter pool comes stocked.
     if lt.x <= 6 and rb.x > 6 and lt.y <= 0 and rb.y > 0 then
         for _, p in pairs({ { 5.5, 0.5 }, { 6.5, -0.5 }, { 7.5, 1.5 } }) do

@@ -44,6 +44,7 @@ end)
 script.on_configuration_changed(function()
     if not storage.stress then collapse.on_init() end
     storage.support_reach = storage.support_reach or {}
+    storage.collapse_log = storage.collapse_log or {}
     caverns.on_init()
     pop_text.on_init()
     -- Retire the old screen-frame countdown (replaced by world pop texts).

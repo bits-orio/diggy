@@ -127,7 +127,23 @@ local function finish(s, aborted)
     storage.sim = nil
     local surface = game.surfaces[s.surface_index]
     if not surface or not surface.valid then return end
-    local collapses = total_collapses() - s.collapses_at_start
+    -- Verdict counts only collapses INSIDE the test region (+margin): the
+    -- sim's edge digging can legitimately topple adjacent old unsupported
+    -- space, which is the player's debt, not the lattice's failure.
+    local collapses, outside = 0, 0
+    for _, entry in pairs(storage.collapse_log or {}) do
+        if entry.tick >= s.started_tick and entry.surface_index == s.surface_index then
+            if entry.x >= s.x1 - 6 and entry.x <= s.x1 + SIZE + 6
+                and entry.y >= s.y1 - 6 and entry.y <= s.y1 + SIZE + 6 then
+                collapses = collapses + 1
+            else
+                outside = outside + 1
+            end
+        end
+    end
+    if outside > 0 then
+        slog(s, string.format("note: %d collapse(s) OUTSIDE the region — adjacent unsupported space pushed over by edge digging", outside))
+    end
     local maxv = collapse.max_in_area(surface, s.x1, s.y1, s.x1 + SIZE, s.y1 + SIZE)
     local verdict
     if aborted then
