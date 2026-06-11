@@ -482,18 +482,21 @@ function collapse.debug_overlay(player)
     player.print({ "diggy.stress-overlay", shown })
 end
 
--- One-time amnesty for saves poisoned by the pre-fix plug ratchet: clamp
--- every cell on the player's surface down to a calm value.
-function collapse.vent(player)
+-- Amnesty for saves poisoned by the pre-fix plug ratchet: clamp every cell
+-- on the player's surface down to a calm value (default 3.0, override via
+-- /diggy-vent <value>). Run it AFTER clearing old plug rubble — digging
+-- pre-fix plugs still injects their never-registered support.
+function collapse.vent(player, target)
+    target = target or 3.0
     local map = storage.stress[player.surface.index] or {}
     local vented = 0
     for key, value in pairs(map) do
-        if value > 3.0 then
-            map[key] = 3.0
+        if value > target then
+            map[key] = target
             vented = vented + 1
         end
     end
-    player.print({ "diggy.stress-vented", vented })
+    player.print({ "diggy.stress-vented", vented, string.format("%.1f", target) })
 end
 
 -- The only timer in the mod: a 0.5s heartbeat that fires pending collapses

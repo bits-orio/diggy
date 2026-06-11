@@ -261,7 +261,7 @@ commands.add_command("diggy-vent", { "diggy.command-vent" }, function(event)
         player.print({ "diggy.admin-only" })
         return
     end
-    collapse.vent(player)
+    collapse.vent(player, tonumber(event.parameter))
 end)
 
 -- Pop-text animation: per tick, but a single table check when nothing is
