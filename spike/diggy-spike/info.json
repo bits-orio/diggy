@@ -1,0 +1,9 @@
+{
+  "name": "diggy-spike",
+  "version": "0.0.1",
+  "title": "Diggy Spike (throwaway)",
+  "author": "shobhitg",
+  "factorio_version": "2.0",
+  "dependencies": ["base >= 2.0"],
+  "description": "Throwaway spike validating the pre-generated-world-behind-rock-cover architecture (ADR 0001). Not for play."
+}
