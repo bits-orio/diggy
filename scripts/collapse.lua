@@ -19,13 +19,17 @@ local COLLAPSE_MASK_FACTOR = 16 -- original: collapse_threshold_total_strength
 -- Support strengths (original Template.support_beam_entities, adapted:
 -- our wall entities stand in for big-rock/huge-rock, void reveal = out-of-map).
 local SUPPORTS = {
-    ["diggy-rock"] = 2,
-    ["diggy-tree"] = 2,
-    -- Player supports punch above the natural wall: a pillar should clearly
-    -- out-support the rock it replaced. (Stress is position-based; hitbox
-    -- size plays no part.)
-    ["stone-wall"] = 5,
-    ["nuclear-reactor"] = 7,
+    -- The natural wall is the great support: any cell within mask reach of a
+    -- remaining rock face is heavily relieved, which is what creates the
+    -- felt "grace distance" between standing rock and a possible collapse.
+    -- Collapses belong in the middle of wide unsupported clearings — and
+    -- leaving natural rock pillars becomes a real strategy, as in the
+    -- original Diggy. Digging stays symmetric: +4 when a rock dies, -4 when
+    -- the frontier replaces it, so tunneling is still stress-negative.
+    ["diggy-rock"] = 4,
+    ["diggy-tree"] = 4,
+    ["stone-wall"] = 3,
+    ["nuclear-reactor"] = 4,
 }
 local TILE_SUPPORTS = {
     ["stone-path"] = 0.03,
