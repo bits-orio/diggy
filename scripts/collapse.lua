@@ -294,13 +294,18 @@ local function execute(pending)
         storage.collapse_count[pending.surface_index] = (storage.collapse_count[pending.surface_index] or 0) + 1
         local force = pending.player_index and game.get_player(pending.player_index).force or game.forces.player
         force.print({ "diggy.cave-collapse" })
-        for _, player in pairs(force.connected_players) do
-            player.add_custom_alert(
-                player.character or player,
-                { type = "item", name = "stone" },
-                { "diggy.cave-collapse" },
-                true
-            )
+        -- add_custom_alert needs a LuaEntity at the alert location; the
+        -- original used a throwaway rock as the target, destroyed right after.
+        local target = surface.create_entity {
+            name = "diggy-rock",
+            position = { pending.x + 0.5, pending.y + 0.5 },
+            force = "neutral",
+        }
+        if target then
+            for _, player in pairs(force.connected_players) do
+                player.add_custom_alert(target, { type = "item", name = "stone" }, { "diggy.cave-collapse" }, true)
+            end
+            target.destroy()
         end
     end
 end

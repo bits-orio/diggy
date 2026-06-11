@@ -86,6 +86,9 @@ local function make_wall(surface, seed, x, y)
     local tree = Simplex.d2(x * TREES.scale, y * TREES.scale, seed + TREES.seed) > TREES.threshold
     local name = tree and "diggy-tree" or "diggy-rock"
     surface.create_entity { name = name, position = { x + 0.5, y + 0.5 }, force = "neutral" }
+    -- Original per-converted-void accounting: +1 reveal stress (with grace),
+    -- -2 for the new wall standing on it. Net -1 per wall tile.
+    collapse.tile_revealed(surface, x, y)
     collapse.support_added(surface, { x = x + 0.5, y = y + 0.5 }, name)
 end
 
@@ -135,10 +138,12 @@ end
 
 function world.on_dig(dig)
     -- Original stress model per dig: the dug wall's support is gone (+2
-    -- blurred), the opened tile stresses the ceiling (+1 blurred, with grace),
-    -- and any new wall spawned by the frontier advance subtracts its support.
+    -- blurred); the dug tile itself adds nothing (it was already floor).
+    -- Each NEWLY exposed wall tile is where the original's void-removed +1
+    -- applies — see make_wall. Net: tunneling is stress-neutral, opening
+    -- wide unsupported space is not, and re-digging collapse rubble costs
+    -- +2, not more.
     collapse.support_removed(dig.surface, dig.position, dig.name, dig.player_index)
-    collapse.tile_revealed(dig.surface, math.floor(dig.position.x), math.floor(dig.position.y), dig.player_index)
     world.advance_frontier(dig.surface, { { math.floor(dig.position.x), math.floor(dig.position.y) } })
 end
 
