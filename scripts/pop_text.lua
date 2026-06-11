@@ -22,7 +22,7 @@ function pop_text.spawn(surface, position, text, color, force)
         target = position,
         color = color,
         scale = 0.1,
-        font = "default-game",
+        font = "default-large-bold",
         alignment = "center",
         scale_with_zoom = true,
         forces = force and { force } or nil,
@@ -61,7 +61,7 @@ function pop_text.tick(now)
             else
                 mul = 1.2
             end
-            local dx = sin(age * 0.45) * 0.35 -- the wobble
+            local dx = sin(age * 0.35) * 0.15 -- the wobble (gentle, stays readable)
             local dy = -3.5 * ease_out_cubic(progress) -- the rise
             local alpha = progress < 0.6 and 1 or (1 - (progress - 0.6) / 0.4)
             obj.target = { x = e.x + dx, y = e.y + dy }
