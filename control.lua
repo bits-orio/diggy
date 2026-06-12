@@ -336,10 +336,11 @@ commands.add_command("diggy-mirror-check", { "diggy.command-mirror-check" }, fun
     player.print({ "diggy.mirror-check", r.chunks, r.mismatches, r.first or "-" })
 end)
 
--- Pop-text animation: per tick, but a single table check when nothing is
--- animating (countdowns are the only spawner today).
+-- Pop-text animation and pending-collapse countdowns: per tick, but a
+-- single table check each when nothing is animating.
 script.on_event(defines.events.on_tick, function(event)
     pop_text.tick(event.tick)
+    collapse.tick()
     sim.step()
 end)
 

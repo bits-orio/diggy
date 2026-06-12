@@ -206,21 +206,35 @@ local function cell_exists(surface, cx, cy)
     return mirror.tile_value(surface, cx, cy) ~= 0
 end
 
+-- Severity gradient across the warning band: yellow at 3.3, red at 3.57.
+local function warn_tint(value)
+    local t = math.min(math.max((value - NEAR_THRESHOLD) / (STRESS_THRESHOLD - NEAR_THRESHOLD), 0), 1)
+    return { r = 1, g = 0.9 - 0.82 * t, b = 0.05, a = 0.8 }
+end
+
 local function sync_marker(surface, cx, cy, value)
     storage.warn_renders = storage.warn_renders or {}
     local wkey = surface.index .. ":" .. cell_key(cx, cy)
     local marker = storage.warn_renders[wkey]
-    if value > NEAR_THRESHOLD and not marker then
+    if value > NEAR_THRESHOLD then
+        if marker then
+            local obj = rendering.get_object_by_id(marker)
+            if obj then
+                obj.color = warn_tint(value)
+                return
+            end
+            storage.warn_renders[wkey] = nil
+        end
         local obj = rendering.draw_sprite {
             sprite = "utility/warning_icon",
             surface = surface,
             target = { cx + 1, cy + 1 },
             x_scale = 0.45,
             y_scale = 0.45,
-            tint = { r = 1, g = 0.55, b = 0.1, a = 0.65 },
+            tint = warn_tint(value),
         }
         if obj then storage.warn_renders[wkey] = obj.id end
-    elseif value <= NEAR_THRESHOLD and marker then
+    elseif marker then
         local obj = rendering.get_object_by_id(marker)
         if obj then obj.destroy() end
         storage.warn_renders[wkey] = nil
@@ -235,7 +249,8 @@ local function trigger(surface, cx, cy, player_index)
     end
 
     -- Unmissable telegraph at the failure point (it can be tiles away from
-    -- the dig that caused it).
+    -- the dig that caused it): CRACKING! pop, a box around the exact failing
+    -- 2x2 cell, and a live countdown inside it.
     local force = player_index and game.get_player(player_index).force
         or mts.surface_owner_force(surface)
     pop_text.spawn(surface, { x = cx + 1, y = cy + 1 },
@@ -247,13 +262,54 @@ local function trigger(surface, cx, cy, player_index)
             color = { r = 1, g = 0.3, b = 0 },
         }
     end
+    local box = rendering.draw_rectangle {
+        surface = surface,
+        left_top = { cx, cy },
+        right_bottom = { cx + 2, cy + 2 },
+        color = { r = 1, g = 0.3, b = 0.05, a = 0.9 },
+        width = 3,
+    }
+    local timer = rendering.draw_text {
+        surface = surface,
+        target = { cx + 1, cy + 1 },
+        text = string.format("%.1f", COLLAPSE_DELAY_TICKS / 60),
+        color = { r = 1, g = 0.45, b = 0.1 },
+        scale = 1.3,
+        alignment = "center",
+        vertical_alignment = "middle",
+    }
     storage.pending_collapses[#storage.pending_collapses + 1] = {
         surface_index = surface.index,
         x = cx,
         y = cy,
         player_index = player_index,
         at_tick = game.tick + COLLAPSE_DELAY_TICKS,
+        box_id = box and box.id or nil,
+        timer_id = timer and timer.id or nil,
     }
+end
+
+local function clear_renders(pending)
+    for _, id in pairs({ pending.box_id, pending.timer_id }) do
+        local obj = rendering.get_object_by_id(id)
+        if obj then obj.destroy() end
+    end
+end
+
+-- Per-tick countdown refresh; a single length check when nothing pends.
+function collapse.tick()
+    local pending = storage.pending_collapses
+    if not pending or #pending == 0 then return end
+    local now = game.tick
+    for i = 1, #pending do
+        local p = pending[i]
+        if p.timer_id and not p.consumed then
+            local obj = rendering.get_object_by_id(p.timer_id)
+            if obj then
+                obj.text = string.format("%.1f", math.max(0, p.at_tick - now) / 60)
+            end
+        end
+    end
 end
 
 -- ── Layer-2 stress cache (ADR 0009): incrementally maintained from mirror
@@ -387,11 +443,14 @@ function collapse.evaluate_around(surface, position, radius, player_index)
                     fresh = true
                 end
                 local marked = renders[si .. ":" .. cx .. "," .. cy] ~= nil
-                if (value > NEAR_THRESHOLD) ~= marked then
-                    if not fresh then
-                        value = verified(surface, col, cx, cy, value)
-                        fresh = true
-                    end
+                if (value > NEAR_THRESHOLD) ~= marked and not fresh then
+                    value = verified(surface, col, cx, cy, value)
+                    fresh = true
+                end
+                if value > NEAR_THRESHOLD or marked then
+                    -- Creates, retires, or merely re-tints the marker — the
+                    -- severity gradient tracks the value; tint needs no
+                    -- verification (a wrong shade can't collapse anything).
                     sync_marker(surface, cx, cy, value)
                 end
                 if value > STRESS_THRESHOLD then
@@ -626,10 +685,20 @@ local function execute(pending)
         end
     end
 
+    -- Sibling pendings whose cell this collapse just filled are part of it:
+    -- consume them so they never claim to have held.
+    for _, p in pairs(storage.pending_collapses) do
+        if p.surface_index == pending.surface_index and positions[cell_key(p.x, p.y)] then
+            p.consumed = true
+        end
+    end
+
     if rocks > 0 then
         log_collapse(pending.surface_index, pending.x, pending.y)
         local force = pending.player_index and game.get_player(pending.player_index).force
             or mts.surface_owner_force(surface)
+        pop_text.spawn(surface, { x = pending.x + 1, y = pending.y + 1 },
+            { "diggy.cavern-collapse-pop" }, { r = 1, g = 0.15, b = 0.05 }, force)
         force.print({ "diggy.cave-collapse" })
         if settings.global["diggy-collapse-broadcast"].value then
             local label = mts.team_label(force)
@@ -677,13 +746,20 @@ function collapse.sparse_collapse(surface, cells, force, seed)
 end
 
 -- The only timer in the mod: a 0.5s heartbeat that fires pending collapses.
+-- Consumed entries (buried by a sibling collapse) leave silently: their
+-- spot already fell as part of that collapse — it did not "hold".
 function collapse.on_heartbeat()
     local pending = storage.pending_collapses
     if not pending or #pending == 0 then return end
     local now = game.tick
     for i = #pending, 1, -1 do
-        if pending[i].at_tick <= now then
+        local p = pending[i]
+        if p.consumed then
+            clear_renders(p)
+            table.remove(pending, i)
+        elseif p.at_tick <= now then
             local job = table.remove(pending, i)
+            clear_renders(job)
             execute(job)
         end
     end
