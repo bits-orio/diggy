@@ -6,6 +6,7 @@ local Simplex = require("scripts.lib.simplex")
 local hash = require("scripts.lib.hash")
 local mirror = require("scripts.lib.mirror")
 local ore_veins = require("scripts.ore_veins")
+local collapse = require("scripts.collapse")
 
 local world = {}
 
@@ -210,16 +211,19 @@ function build_chunk(surface, area)
         local name = tree and "diggy-tree" or "diggy-rock"
         surface.create_entity { name = name, position = { w[1] + 0.5, w[2] + 0.5 }, force = "neutral" }
     end
-    -- The homestead comes pre-pillared: a stone-wall lattice (3-tile gaps)
-    -- across the carve-out, so the starting cave is protected by the same
-    -- honest geometry as everything players build later. Minable/reusable.
+    -- The homestead comes pre-pillared: a stone-wall lattice across the
+    -- carve-out, so the starting cave is protected by the same honest
+    -- geometry as everything players build later. Minable/reusable; the
+    -- spacing follows the wall-support setting so spawn starts calm.
     if lt.x <= 0 and rb.x > 0 and lt.y <= 0 and rb.y > 0 then
         local owner = game.forces.player
         local lattice_max = CARVE_RADIUS - 3
-        -- First lattice line at or after -lattice_max on the 2 (mod 4) grid.
-        local first = 2 - 4 * math.floor((lattice_max + 2) / 4)
-        for x = first, lattice_max, 4 do
-            for y = first, lattice_max, 4 do
+        local step = collapse.recommended_pillar_spacing()
+        -- First line at or after -lattice_max on the 2 (mod step) grid —
+        -- anchored off the origin so the spawn point stays clear.
+        local first = -lattice_max + ((2 + lattice_max) % step)
+        for x = first, lattice_max, step do
+            for y = first, lattice_max, step do
                 if x * x + y * y <= lattice_max * lattice_max
                     and surface.can_place_entity { name = "stone-wall", position = { x + 0.5, y + 0.5 } } then
                     surface.create_entity { name = "stone-wall", position = { x + 0.5, y + 0.5 }, force = owner }

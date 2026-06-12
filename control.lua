@@ -77,6 +77,11 @@ script.on_configuration_changed(function()
         ["diggy-dig-nest-chance"] = { old = { [0.1] = true, [0.01] = true, [0.002] = true }, new = 0.05 },
         ["diggy-cavern-worm-multiplier"] = { old = { [1.0] = true }, new = 2.0 },
         ["diggy-cavern-chance"] = { old = { [0.02] = true }, new = 0.03 },
+        -- The support-economy levers settled on tuned defaults (1.5 catches
+        -- the old strut default clamped into the new range).
+        ["diggy-wall-support"] = { old = { [5] = true }, new = 3 },
+        ["diggy-strut-strength-max"] = { old = { [2] = true, [1.5] = true }, new = 1 },
+        ["diggy-wall-crowding"] = { old = { [1] = true }, new = 1.2 },
     }
     for name, r in pairs(rebase) do
         if r.old[settings.global[name].value] then
@@ -151,6 +156,9 @@ remote.add_interface("diggy-v1", {
     -- Drift probe for the layer-2 stress cache (ADR 0009).
     debug_cache_check = function(surface_index, x1, y1, x2, y2)
         return collapse.cache_check(game.surfaces[surface_index], x1, y1, x2, y2)
+    end,
+    debug_protected = function(surface_index, x, y)
+        return collapse.is_protected(game.surfaces[surface_index], x, y)
     end,
 })
 

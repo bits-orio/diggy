@@ -21,12 +21,25 @@ function caverns.on_init()
     storage.next_cavern_id = storage.next_cavern_id or 1
 end
 
--- While a nest room's worms live, no collapse can trigger inside it.
+-- No collapse can trigger inside a room while its worms live — and none
+-- while its countdown runs: the countdown IS the grace period, and its
+-- expiry (sparse_collapse, live re-checked) is the only judge of that
+-- ceiling. Without this, placing one wall mid-countdown re-evaluated the
+-- room straight into 2.5-second pendings, stealing the time.
 collapse.protection_check = function(surface, x, y)
     for _, room in pairs(storage.cavern_rooms or {}) do
         if room.protected and room.surface_index == surface.index then
             local dx, dy = x - room.cx, y - room.cy
             if dx * dx + dy * dy <= (room.radius + 2) * (room.radius + 2) then
+                return true
+            end
+        end
+    end
+    for _, cd in pairs(storage.cavern_countdowns or {}) do
+        if cd.surface_index == surface.index then
+            local r = cd.radius or 16
+            local dx, dy = x - cd.cx, y - cd.cy
+            if dx * dx + dy * dy <= r * r then
                 return true
             end
         end
@@ -163,6 +176,7 @@ local function arm_room(room)
         force_index = force.index,
         cx = room.cx,
         cy = room.cy,
+        radius = room.radius + 2, -- protection covers the same disc that armed
     }
     force.print({ "diggy.cavern-armed" })
 end

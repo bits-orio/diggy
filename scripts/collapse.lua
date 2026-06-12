@@ -161,6 +161,13 @@ function collapse.reach_radius(force)
     return reach_for(force.index) + 2
 end
 
+-- The pillar spacing that holds calmly at the current wall strength: the
+-- classic every-4th-tile grid above ~4.5 support, every 3rd tile below.
+-- The spawn lattice and the benchmark sim both build to this.
+function collapse.recommended_pillar_spacing()
+    return settings.global["diggy-wall-support"].value >= 4.5 and 4 or 3
+end
+
 -- Crowding penalty (host lever): touching walls share the load path, so a
 -- wall's support divides by (1 + K x neighbours). Isolated pillars (n = 0)
 -- are untouched; solid lines stop multiplying support.
@@ -530,11 +537,18 @@ function collapse.hot_cells(surface, cx, cy, radius)
     return hot
 end
 
-function collapse.max_in_area(surface, x1, y1, x2, y2)
+-- Cavern grace state (worms alive or countdown running), for diagnostics
+-- and the benchmark: protected cells legitimately sit over threshold.
+function collapse.is_protected(surface, x, y)
+    return collapse.protection_check ~= nil and collapse.protection_check(surface, x, y)
+end
+
+function collapse.max_in_area(surface, x1, y1, x2, y2, ignore_protected)
     local maxv = 0
     for x = 2 * math.floor(x1 * 0.5), x2, 2 do
         for y = 2 * math.floor(y1 * 0.5), y2, 2 do
-            if cell_exists(surface, x, y) then
+            if cell_exists(surface, x, y)
+                and not (ignore_protected and collapse.is_protected(surface, x, y)) then
                 local v = collapse.compute_cell(surface, x, y)
                 if v > maxv then maxv = v end
             end

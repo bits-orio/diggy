@@ -1,9 +1,9 @@
 -- Self-contained repeatable benchmark (/diggy-sim [bare|stop]):
 --   2. clears a 32x32 hall east of the player at 4 digs/tick (real-time
 --      pacing so grace timers and collapse delays behave like play),
---   3. maintains an EXACT square stone-wall lattice with 3-tile gaps
---      (anchor snapped to the lattice, walls force-placed on-point — no
---      find_non_colliding drift, idempotent across reruns),
+--   3. maintains an EXACT square stone-wall lattice, spacing taken from
+--      collapse.recommended_pillar_spacing() (anchor snapped, walls
+--      force-placed on-point — no drift, idempotent across reruns),
 --   4. logs progress to factorio-current.log every 2 seconds and prints a
 --      PASS/FAIL verdict at the end (pillared mode passes on zero collapses).
 local collapse = require("scripts.collapse")
@@ -115,6 +115,7 @@ function sim.start(player, bare, slow)
         last_log = game.tick,
         run_id = string.format("diggy-sim-%s-t%d", bare and "bare" or "pillared", game.tick),
         slow = slow or false,
+        step = collapse.recommended_pillar_spacing(),
     }
     slog(storage.sim, string.format("start region=(%d,%d)..(%d,%d) artifacts=script-output/%s/", x1, y1, x1 + SIZE, y1 + SIZE, storage.sim.run_id))
     archive(storage.sim, "start")
@@ -125,7 +126,7 @@ local function status(s, surface)
     return string.format("dug=%d collapses=%d max_stress=%.2f walls=%d",
         s.dug,
         total_collapses() - s.collapses_at_start,
-        collapse.max_in_area(surface, s.x1, s.y1, s.x1 + SIZE, s.y1 + SIZE),
+        collapse.max_in_area(surface, s.x1, s.y1, s.x1 + SIZE, s.y1 + SIZE, true),
         surface.count_entities_filtered { name = "stone-wall", area = { { s.x1, s.y1 }, { s.x1 + SIZE, s.y1 + SIZE } } })
 end
 
@@ -150,7 +151,8 @@ local function finish(s, aborted)
     if outside > 0 then
         slog(s, string.format("note: %d collapse(s) OUTSIDE the region — adjacent unsupported space pushed over by edge digging", outside))
     end
-    local maxv = collapse.max_in_area(surface, s.x1, s.y1, s.x1 + SIZE, s.y1 + SIZE)
+    -- Worm-guarded / counting-down cavern cells sit hot by design.
+    local maxv = collapse.max_in_area(surface, s.x1, s.y1, s.x1 + SIZE, s.y1 + SIZE, true)
     local verdict
     if aborted then
         verdict = "ABORTED"
@@ -255,8 +257,8 @@ function sim.step()
     -- Exact lattice: walls go on the snapped grid points, force-placed
     -- (script placement ignores collision, so nothing drifts off-grid).
     if not s.bare then
-        for x = s.x1 + 2, x2 - 2, 4 do
-            for y = s.y1 + 2, y2 - 2, 4 do
+        for x = s.x1 + 2, x2 - 2, s.step or 4 do
+            for y = s.y1 + 2, y2 - 2, s.step or 4 do
                 local tile = surface.get_tile(x, y)
                 if tile.valid and tile.name ~= "out-of-map" and not tile.name:find("water", 1, true)
                     and surface.count_entities_filtered { name = { "stone-wall", "diggy-rock", "diggy-tree" }, position = { x + 0.5, y + 0.5 }, radius = 0.4 } == 0 then

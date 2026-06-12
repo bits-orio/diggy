@@ -66,7 +66,7 @@ The cave-in that re-seals an area with rock cover when stress exceeds the thresh
 _Avoid_: cave-in (in code; fine in prose)
 
 **Homestead lattice**:
-The stone-wall pillar grid (4-tile spacing, player-owned and minable) pre-placed across the spawn carve-out, so the starting cave is held up by the same honest geometry players build with later.
+The stone-wall pillar grid (spacing adapts to the wall-support setting; player-owned and minable) pre-placed across the spawn carve-out, so the starting cave is held up by the same honest geometry players build with later.
 
 **Crushed remains**:
 A non-colliding corpse entity left where a building was crushed by a collapse, holding its inventories — buried and lootable after re-digging. Opt-in (host setting, off by default): normally crushed buildings and their contents are simply destroyed.
