@@ -7,6 +7,7 @@
 -- identical digging collapses identically across MTS teams.
 local hash = require("scripts.lib.hash")
 local mts = require("scripts.mts")
+local pop_text = require("scripts.pop_text")
 
 local collapse = {}
 
@@ -106,6 +107,8 @@ function collapse.on_init()
     storage.collapse_count = {}
     -- Ring buffer of recent collapse positions (diagnostics / sim verdicts).
     storage.collapse_log = {}
+    -- Persistent warning markers on cells in the cracking band (render ids).
+    storage.warn_renders = {}
     -- Reach (mask radius) per placed support, keyed by unit_number: removal
     -- must undo with the SAME mask it was placed with, or stress corrupts.
     storage.support_reach = {}
@@ -142,9 +145,13 @@ local function trigger(surface, x, y, player_index)
         return
     end
 
-    -- Cracking warning, then the ceiling comes down after the delay.
+    -- Cracking warning, then the ceiling comes down after the delay: an
+    -- unmissable pop at the failure point, since it can be tiles away from
+    -- the dig that caused it.
     local force = player_index and game.get_player(player_index).force
         or mts.surface_owner_force(surface)
+    pop_text.spawn(surface, { x = x + 1, y = y + 1 },
+        { "diggy.collapse-imminent-pop" }, { r = 1, g = 0.25, b = 0.05 }, force)
     for _, player in pairs(force.connected_players) do
         player.create_local_flying_text {
             text = { "diggy.cracking-sound-" .. hash.range(surface.map_gen_settings.seed, x, y, 60, 1, 2) },
@@ -178,6 +185,29 @@ local function add_cell(surface, x, y, fraction, player_index)
     local key = cell_key(x, y)
     local value = (map[key] or 0) + fraction
     map[key] = value
+
+    -- Weak ceiling is VISIBLE: a persistent marker appears the moment a cell
+    -- enters the cracking band and disappears when supports relieve it —
+    -- players can predict where a collapse would land before ever digging
+    -- near it (collapses bleed up to ~4 tiles from the causing dig).
+    storage.warn_renders = storage.warn_renders or {}
+    local wkey = surface.index .. ":" .. key
+    local marker = storage.warn_renders[wkey]
+    if value > NEAR_THRESHOLD and not marker then
+        local obj = rendering.draw_sprite {
+            sprite = "utility/warning_icon",
+            surface = surface,
+            target = { x + 1, y + 1 },
+            x_scale = 0.45,
+            y_scale = 0.45,
+            tint = { r = 1, g = 0.55, b = 0.1, a = 0.65 },
+        }
+        if obj then storage.warn_renders[wkey] = obj.id end
+    elseif value <= NEAR_THRESHOLD and marker then
+        local obj = rendering.get_object_by_id(marker)
+        if obj then obj.destroy() end
+        storage.warn_renders[wkey] = nil
+    end
 
     if fraction > 0 and not suppress_triggers then
         if value > STRESS_THRESHOLD then
