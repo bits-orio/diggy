@@ -1,17 +1,16 @@
 -- Admin test kit (/diggy-kit): everything needed to playtest the dig/collapse
 -- loop fast — 4x manual mining, a stack of pillars, and MK2 armor with
--- fusion power, roboports, and a bot swarm.
+-- fusion power, shields, lasers, roboports, and a bot swarm.
 local admin_kit = {}
 
+-- { name, count }; fills the MK2 grid exactly (100/100 slots).
 local EQUIPMENT = {
-    "fission-reactor-equipment", -- base 2.0 name for the portable reactor
-    "fission-reactor-equipment",
-    "personal-roboport-mk2-equipment",
-    "personal-roboport-mk2-equipment",
-    "exoskeleton-equipment",
-    "exoskeleton-equipment",
-    "battery-mk2-equipment",
-    "battery-mk2-equipment",
+    { "fission-reactor-equipment", 2 }, -- base 2.0 name for the portable reactor
+    { "personal-roboport-mk2-equipment", 2 },
+    { "exoskeleton-equipment", 2 },
+    { "battery-mk2-equipment", 2 },
+    { "energy-shield-mk2-equipment", 2 },
+    { "personal-laser-defense-equipment", 8 },
 }
 
 function admin_kit.give(player)
@@ -31,8 +30,18 @@ function admin_kit.give(player)
         player.print({ "diggy.kit-armor-skipped" })
     end
     if armor and armor.valid_for_read and armor.grid then
-        for _, name in pairs(EQUIPMENT) do
-            armor.grid.put { name = name }
+        for _, spec in pairs(EQUIPMENT) do
+            for _ = 1, spec[2] do
+                local eq = armor.grid.put { name = spec[1] }
+                -- Arrive charged: full energy buffers (batteries included)
+                -- and shields, no waiting on the reactors.
+                if eq then
+                    eq.energy = eq.max_energy
+                    if eq.max_shield > 0 then
+                        eq.shield = eq.max_shield
+                    end
+                end
+            end
         end
     end
 
