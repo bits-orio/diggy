@@ -245,10 +245,12 @@ local function cell_exists(surface, cx, cy)
     return mirror.tile_value(surface, cx, cy) ~= 0
 end
 
--- Severity gradient across the warning band: yellow at 3.3, red at 3.57.
+-- Severity gradient across the warning band: yellow at 3.3, red at 3.57 —
+-- and faint to solid the same way, so a tile-squeezed base reads as a
+-- quiet haze with only the genuinely hot cells popping.
 local function warn_tint(value)
     local t = math.min(math.max((value - NEAR_THRESHOLD) / (STRESS_THRESHOLD - NEAR_THRESHOLD), 0), 1)
-    return { r = 1, g = 0.9 - 0.82 * t, b = 0.05, a = 0.8 }
+    return { r = 1, g = 0.9 - 0.82 * t, b = 0.05, a = 0.2 + 0.8 * t }
 end
 
 local function sync_marker(surface, cx, cy, value)
@@ -271,6 +273,9 @@ local function sync_marker(surface, cx, cy, value)
             x_scale = 0.45,
             y_scale = 0.45,
             tint = warn_tint(value),
+            -- Advisory layer: lives in ALT view (telegraph boxes for
+            -- imminent collapses stay always-visible).
+            only_in_alt_mode = true,
         }
         if obj then storage.warn_renders[wkey] = obj.id end
     elseif marker then

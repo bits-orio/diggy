@@ -25,6 +25,18 @@ local function disable_crash_site()
     end
 end
 
+-- Re-judge every cell currently wearing a warning marker — stale after
+-- anything that changes what supports are worth (research, host tuning).
+local function refresh_warned_cells()
+    for wkey in pairs(storage.warn_renders or {}) do
+        local si, cx, cy = wkey:match("^(%d+):(-?%d+),(-?%d+)$")
+        local surface = si and game.surfaces[tonumber(si)]
+        if surface and surface.valid then
+            collapse.evaluate_around(surface, { x = tonumber(cx), y = tonumber(cy) }, 2)
+        end
+    end
+end
+
 script.on_init(function()
     disable_crash_site()
     dig_tracker.on_init()
@@ -51,6 +63,13 @@ script.on_configuration_changed(function()
     storage.collapse_log = storage.collapse_log or {}
     storage.warn_renders = storage.warn_renders or {}
     storage.telegraphs = storage.telegraphs or {}
+    -- Warning markers live in ALT view now: upgrade live ones in place,
+    -- then re-judge them so the severity opacity paints on.
+    for _, id in pairs(storage.warn_renders) do
+        local obj = rendering.get_object_by_id(id)
+        if obj then obj.only_in_alt_mode = true end
+    end
+    refresh_warned_cells()
     caverns.on_init()
     pop_text.on_init()
     -- Retire the old screen-frame countdown (replaced by world pop texts).
@@ -272,18 +291,6 @@ end)
 script.on_nth_tick(1800, function()
     mirror.sweep()
 end)
-
--- Re-judge every cell currently wearing a warning marker — stale after
--- anything that changes what supports are worth (research, host tuning).
-local function refresh_warned_cells()
-    for wkey in pairs(storage.warn_renders or {}) do
-        local si, cx, cy = wkey:match("^(%d+):(-?%d+),(-?%d+)$")
-        local surface = si and game.surfaces[tonumber(si)]
-        if surface and surface.valid then
-            collapse.evaluate_around(surface, { x = tonumber(cx), y = tonumber(cy) }, 2)
-        end
-    end
-end
 
 -- Support Struts completing widens every wall's reach instantly: re-judge
 -- the cells currently wearing warning markers so stale warnings clear.
