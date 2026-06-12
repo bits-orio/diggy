@@ -304,8 +304,11 @@ function caverns.on_heartbeat()
                 if force then force.print({ "diggy.cavern-held" }) end
             end
         else
-            local secs = math.ceil((cd.at_tick - now) / 60)
-            if secs ~= cd.last_secs then
+            -- floor, not ceil: the announced number must match the integer
+            -- part the per-cell telegraph timers display all second long
+            -- (ceil ran a visible second ahead of them).
+            local secs = math.floor((cd.at_tick - now) / 60)
+            if secs >= 1 and secs ~= cd.last_secs then
                 cd.last_secs = secs
                 local force = game.forces[cd.force_index]
                 local heat = 1 - math.min(secs, 15) / 15
