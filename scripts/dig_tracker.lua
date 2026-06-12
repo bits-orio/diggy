@@ -1,6 +1,7 @@
--- Per-surface dig accounting: volume dug drives evolution pressure, depth is
--- the progression axis (gates threats, feeds milestones — both consume the
--- stats exposed here).
+-- Per-surface dig accounting: depth is the progression axis (gates threats,
+-- feeds milestones — both consume the stats exposed here). Digging itself
+-- carries no evolution cost: clearing the nests you uncover is penalty
+-- enough.
 local dig_tracker = {}
 
 function dig_tracker.on_init()
@@ -27,13 +28,6 @@ function dig_tracker.on_dig(dig)
     local depth = math.sqrt(p.x * p.x + p.y * p.y)
     if depth > stats.depth then
         stats.depth = depth
-    end
-
-    local per_dig = settings.global["diggy-evolution-per-dig"].value
-    if per_dig > 0 then
-        local enemy = game.forces.enemy
-        local evolution = enemy.get_evolution_factor(surface)
-        enemy.set_evolution_factor(math.min(1, evolution + per_dig), surface)
     end
 end
 

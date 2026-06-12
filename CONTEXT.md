@@ -98,9 +98,6 @@ The space at the end of a cavern tunnel, with a depth-gated personality: empty c
 **Arming**:
 A room's ceiling faces judgment the moment nothing guards it: nest rooms arm when their last worm dies; unguarded rooms arm at breach. Arming sweeps the room for cells over threshold in the live geometry; failing areas give a 15-second on-screen countdown, then shed roughly half their mass (a sparse collapse) — pillars placed during the countdown are honored. Sanctuaries never arm. While worms live, no collapse can trigger in their room — the only way in is to fight.
 
-**Evolution pressure**:
-The contribution of total volume dug to enemy evolution — greed makes the baseline meaner, while depth decides what shows up.
-
 **Difficulty preset**:
 A named bundle (e.g. Casual / Classic / Brutal) that scales the threat, evolution, and collapse knobs together. Every knob remains individually overridable by the host. Diggy never grants starting gear — that belongs to FasterStart or MTS starter items.
 

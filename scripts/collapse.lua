@@ -128,6 +128,7 @@ function collapse.on_init()
     storage.collapse_count = {}
     storage.collapse_log = {}
     storage.warn_renders = {}
+    storage.telegraphs = {}
 end
 
 local function cell_key(x, y)
@@ -279,6 +280,56 @@ local function sync_marker(surface, cx, cy, value)
     end
 end
 
+-- ── Telegraph: a thin box around a cell awaiting judgment with a live
+-- countdown inside — one UX shared by 2.5s collapse pendings and cavern
+-- countdowns. Entries live in storage.telegraphs; tick() keeps the timer
+-- text and the severity tint current.
+
+function collapse.telegraph(surface, cx, cy, at_tick, value)
+    storage.telegraphs = storage.telegraphs or {}
+    local box = rendering.draw_rectangle {
+        surface = surface,
+        left_top = { cx, cy },
+        right_bottom = { cx + 2, cy + 2 },
+        color = warn_tint(value or STRESS_THRESHOLD + 1),
+        width = 1,
+    }
+    local timer = rendering.draw_text {
+        surface = surface,
+        target = { cx + 1, cy + 1 },
+        text = string.format("%.1f", (at_tick - game.tick) / 60),
+        color = { r = 1, g = 0.45, b = 0.1 },
+        scale = 1.3,
+        alignment = "center",
+        vertical_alignment = "middle",
+    }
+    local entry = {
+        surface_index = surface.index,
+        x = cx,
+        y = cy,
+        at_tick = at_tick,
+        box_id = box and box.id or nil,
+        timer_id = timer and timer.id or nil,
+    }
+    storage.telegraphs[#storage.telegraphs + 1] = entry
+    return entry
+end
+
+function collapse.untelegraph(entry)
+    if not entry then return end
+    for _, id in pairs({ entry.box_id, entry.timer_id }) do
+        local obj = rendering.get_object_by_id(id)
+        if obj then obj.destroy() end
+    end
+    local list = storage.telegraphs or {}
+    for i = #list, 1, -1 do
+        if list[i] == entry then
+            list[i] = list[#list]
+            list[#list] = nil
+        end
+    end
+end
+
 local function trigger(surface, cx, cy, player_index, value)
     if not settings.global["diggy-collapse-enabled"].value then return end
     if collapse.protection_check and collapse.protection_check(surface, cx, cy) then return end
@@ -300,38 +351,14 @@ local function trigger(surface, cx, cy, player_index, value)
             color = { r = 1, g = 0.3, b = 0 },
         }
     end
-    local box = rendering.draw_rectangle {
-        surface = surface,
-        left_top = { cx, cy },
-        right_bottom = { cx + 2, cy + 2 },
-        color = warn_tint(value or STRESS_THRESHOLD + 1),
-        width = 1,
-    }
-    local timer = rendering.draw_text {
-        surface = surface,
-        target = { cx + 1, cy + 1 },
-        text = string.format("%.1f", COLLAPSE_DELAY_TICKS / 60),
-        color = { r = 1, g = 0.45, b = 0.1 },
-        scale = 1.3,
-        alignment = "center",
-        vertical_alignment = "middle",
-    }
     storage.pending_collapses[#storage.pending_collapses + 1] = {
         surface_index = surface.index,
         x = cx,
         y = cy,
         player_index = player_index,
         at_tick = game.tick + COLLAPSE_DELAY_TICKS,
-        box_id = box and box.id or nil,
-        timer_id = timer and timer.id or nil,
+        telegraph = collapse.telegraph(surface, cx, cy, game.tick + COLLAPSE_DELAY_TICKS, value),
     }
-end
-
-local function clear_renders(pending)
-    for _, id in pairs({ pending.box_id, pending.timer_id }) do
-        local obj = rendering.get_object_by_id(id)
-        if obj then obj.destroy() end
-    end
 end
 
 
@@ -782,27 +809,27 @@ function collapse.sparse_collapse(surface, cells, force, seed)
     return rocks
 end
 
--- Per-tick countdown refresh; a single length check when nothing pends.
--- The box tracks the cell's live severity tint — supports placed during
--- the countdown visibly cool it from red toward yellow.
+-- Per-tick telegraph refresh; a single length check when nothing pends.
+-- Each box tracks its cell's live severity tint — supports placed against
+-- the clock visibly cool it from red toward yellow.
 function collapse.tick()
-    local pending = storage.pending_collapses
-    if not pending or #pending == 0 then return end
+    local telegraphs = storage.telegraphs
+    if not telegraphs or #telegraphs == 0 then return end
     local now = game.tick
-    for i = 1, #pending do
-        local p = pending[i]
-        if p.timer_id and not p.consumed then
-            local obj = rendering.get_object_by_id(p.timer_id)
+    for i = 1, #telegraphs do
+        local t = telegraphs[i]
+        if t.timer_id then
+            local obj = rendering.get_object_by_id(t.timer_id)
             if obj then
-                obj.text = string.format("%.1f", math.max(0, p.at_tick - now) / 60)
+                obj.text = string.format("%.1f", math.max(0, t.at_tick - now) / 60)
             end
-            local sx = stress_cache[p.surface_index]
-            local col = sx and sx[p.x]
-            local value = col and col[p.y]
-            if value and p.box_id then
-                local box = rendering.get_object_by_id(p.box_id)
-                if box then box.color = warn_tint(value) end
-            end
+        end
+        local sx = stress_cache[t.surface_index]
+        local col = sx and sx[t.x]
+        local value = col and col[t.y]
+        if value and t.box_id then
+            local box = rendering.get_object_by_id(t.box_id)
+            if box then box.color = warn_tint(value) end
         end
     end
 end
@@ -817,11 +844,11 @@ function collapse.on_heartbeat()
     for i = #pending, 1, -1 do
         local p = pending[i]
         if p.consumed then
-            clear_renders(p)
+            collapse.untelegraph(p.telegraph)
             table.remove(pending, i)
         elseif p.at_tick <= now then
             local job = table.remove(pending, i)
-            clear_renders(job)
+            collapse.untelegraph(job.telegraph)
             execute(job)
         end
     end

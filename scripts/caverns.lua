@@ -12,7 +12,6 @@ local pop_text = require("scripts.pop_text")
 
 local caverns = {}
 
-local COUNTDOWN_TICKS = 15 * 60
 
 function caverns.on_init()
     storage.cavern_rooms = storage.cavern_rooms or {}
@@ -169,15 +168,26 @@ local function arm_room(room)
     if #hot == 0 then return end
 
     local force = game.forces[room.force_index] or game.forces.player
+    local at_tick = game.tick + settings.global["diggy-cavern-countdown"].value * 60
+    -- Every failing cell gets the standard telegraph (box + live countdown),
+    -- the same UX as 2.5s collapse pendings.
+    for _, cell in pairs(hot) do
+        cell.telegraph = collapse.telegraph(surface, cell.x, cell.y, at_tick)
+    end
     storage.cavern_countdowns[#storage.cavern_countdowns + 1] = {
         surface_index = room.surface_index,
         cells = hot,
-        at_tick = game.tick + COUNTDOWN_TICKS,
+        at_tick = at_tick,
         force_index = force.index,
         cx = room.cx,
         cy = room.cy,
         radius = room.radius + 2, -- protection covers the same disc that armed
     }
+    -- Sweep the room so its warning triangles render NOW — interior cells
+    -- of a big room may never have been near a dig, so nothing else has
+    -- evaluated them yet. The countdown protection (just registered)
+    -- suppresses triggers; this paints markers only.
+    collapse.evaluate_around(surface, { x = room.cx, y = room.cy }, room.radius + 4)
     force.print({ "diggy.cavern-armed" })
 end
 
@@ -277,8 +287,10 @@ function caverns.on_heartbeat()
         local cd = countdowns[i]
         local surface = game.surfaces[cd.surface_index]
         if not surface or not surface.valid then
+            for _, cell in pairs(cd.cells) do collapse.untelegraph(cell.telegraph) end
             table.remove(countdowns, i)
         elseif cd.at_tick <= now then
+            for _, cell in pairs(cd.cells) do collapse.untelegraph(cell.telegraph) end
             table.remove(countdowns, i)
             local force = game.forces[cd.force_index]
             local rocks = collapse.sparse_collapse(surface, cd.cells, force, surface.map_gen_settings.seed)

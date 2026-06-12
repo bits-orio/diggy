@@ -50,6 +50,7 @@ script.on_configuration_changed(function()
     storage.support_reach = nil
     storage.collapse_log = storage.collapse_log or {}
     storage.warn_renders = storage.warn_renders or {}
+    storage.telegraphs = storage.telegraphs or {}
     caverns.on_init()
     pop_text.on_init()
     -- Retire the old screen-frame countdown (replaced by world pop texts).
@@ -74,9 +75,12 @@ script.on_configuration_changed(function()
     -- left untouched.
     local rebase = {
         ["diggy-dig-biter-chance"] = { old = { [1.0] = true, [0.015] = true }, new = 0.1 },
-        ["diggy-dig-nest-chance"] = { old = { [0.1] = true, [0.01] = true, [0.002] = true }, new = 0.05 },
-        ["diggy-cavern-worm-multiplier"] = { old = { [1.0] = true }, new = 2.0 },
-        ["diggy-cavern-chance"] = { old = { [0.02] = true }, new = 0.03 },
+        ["diggy-dig-nest-chance"] = { old = { [0.1] = true, [0.01] = true, [0.002] = true, [0.05] = true }, new = 0.02 },
+        ["diggy-cavern-worm-multiplier"] = { old = { [1.0] = true, [2.0] = true }, new = 1.5 },
+        ["diggy-cavern-chance"] = { old = { [0.02] = true, [0.03] = true }, new = 0.05 },
+        ["diggy-treasure-chance"] = { old = { [0.004] = true }, new = 0.005 },
+        ["diggy-pack-size-multiplier"] = { old = { [1.0] = true }, new = 2.0 },
+        ["diggy-collapse-broadcast"] = { old = { [true] = true }, new = false },
         -- The support-economy levers settled on tuned defaults (1.5 catches
         -- the old strut default clamped into the new range).
         ["diggy-wall-support"] = { old = { [5] = true }, new = 3 },
