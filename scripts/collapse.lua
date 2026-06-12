@@ -576,8 +576,22 @@ local function execute(pending)
     local surface = game.surfaces[pending.surface_index]
     if not surface or not surface.valid then return end
 
-    -- Live re-evaluation at execution: pillars placed during the 2.5s
-    -- warning are honored; cells they saved don't fall.
+    -- Live re-judgment at execution, against the FULL threshold: a pillar
+    -- placed during the 2.5s warning saves its spot. The relaxed test below
+    -- only gives a CONFIRMED collapse its area — it must never be the reason
+    -- a rescued epicenter falls anyway.
+    local epicenter = cell_exists(surface, pending.x, pending.y)
+        and collapse.compute_cell(surface, pending.x, pending.y) or 0
+    if epicenter <= STRESS_THRESHOLD then
+        sync_marker(surface, pending.x, pending.y, epicenter)
+        local force = pending.player_index and game.get_player(pending.player_index).force
+            or mts.surface_owner_force(surface)
+        pop_text.spawn(surface, { x = pending.x + 1, y = pending.y + 1 },
+            { "diggy.cavern-held-pop" }, { r = 0.3, g = 0.9, b = 0.3 }, force)
+        return
+    end
+
+    -- The epicenter fails for real: spread to near-threshold neighbors.
     local positions = {}
     for ox = -BASE_RADIUS, BASE_RADIUS do
         for oy = -BASE_RADIUS, BASE_RADIUS do
