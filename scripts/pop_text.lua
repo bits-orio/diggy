@@ -3,7 +3,7 @@
 -- side-to-side and fades out. Entries animate per tick (early-out when idle).
 local pop_text = {}
 
-local sin, min = math.sin, math.min
+local sin, min, max = math.sin, math.min, math.max
 
 local function ease_out_cubic(t)
     local u = 1 - t
@@ -55,7 +55,9 @@ function pop_text.tick(now)
             -- Overshoot pop, then settle.
             local mul
             if age < 4 then
-                mul = 3.2 * (age / 4)
+                -- age can be 0 when spawn and animation share a tick; the
+                -- engine rejects scale 0.
+                mul = max(0.1, 3.2 * (age / 4))
             elseif age < 10 then
                 mul = 3.2 - 2.0 * ((age - 4) / 6)
             else

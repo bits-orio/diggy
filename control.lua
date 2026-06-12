@@ -1,4 +1,5 @@
 local mts = require("scripts.mts")
+local mirror = require("scripts.lib.mirror")
 local pop_text = require("scripts.pop_text")
 local world = require("scripts.world")
 local collapse = require("scripts.collapse")
@@ -108,6 +109,9 @@ local function on_dig(event)
         force = force,
         player_index = event.player_index,
     }
+    -- The cover entity is leaving the world (the engine removes it after
+    -- this event resolves — the mirror must not wait for that).
+    mirror.set_rock(dig.surface, dig.position, false)
     -- Rubble re-digs are inert: stress and charting only. The tile's
     -- seed-keyed outcomes (vein, spawns, cavern, treasure, ore yield) fired
     -- when it FIRST opened; re-rolling them respawned the same worms and
@@ -139,6 +143,14 @@ remote.add_interface("diggy-v1", {
     debug_sim_stop = function() sim.stop(nil) end,
     debug_max_stress = function(surface_index, x1, y1, x2, y2)
         return collapse.max_in_area(game.surfaces[surface_index], x1, y1, x2, y2)
+    end,
+    -- Exactness proof for the mirror's event coverage (ADR 0009).
+    debug_mirror_check = function(surface_index, x1, y1, x2, y2)
+        return mirror.check(game.surfaces[surface_index], x1, y1, x2, y2)
+    end,
+    -- Drift probe for the layer-2 stress cache (ADR 0009).
+    debug_cache_check = function(surface_index, x1, y1, x2, y2)
+        return collapse.cache_check(game.surfaces[surface_index], x1, y1, x2, y2)
     end,
 })
 
@@ -175,7 +187,11 @@ local function on_removed(event)
     elseif NESTS[entity.name] then
         dig_spawner.on_nest_died(entity)
     else
-        collapse.evaluate_around(entity.surface, entity.position, 12, event.player_index)
+        -- A wall or reactor: gone from the mirror first, then re-evaluate
+        -- everything its live reach was holding up.
+        mirror.support_removed(entity)
+        collapse.evaluate_around(entity.surface, entity.position,
+            collapse.reach_radius(entity.force), event.player_index)
     end
 end
 
@@ -189,7 +205,8 @@ local support_filter = {
 }
 local function on_built(event)
     local entity = event.entity
-    collapse.evaluate_around(entity.surface, entity.position, 12)
+    mirror.support_added(entity)
+    collapse.evaluate_around(entity.surface, entity.position, collapse.reach_radius(entity.force))
 end
 script.on_event(defines.events.on_built_entity, on_built, support_filter)
 script.on_event(defines.events.on_robot_built_entity, on_built, support_filter)
@@ -198,6 +215,7 @@ script.on_event(defines.events.script_raised_revive, on_built, support_filter)
 
 local function on_tiles_changed(surface, tiles, player_index)
     for _, t in pairs(tiles) do
+        mirror.refresh_tile(surface, t.position)
         collapse.evaluate_around(surface, t.position, 3, player_index)
     end
 end
@@ -213,10 +231,49 @@ end)
 script.on_event(defines.events.on_robot_mined_tile, function(event)
     on_tiles_changed(event.robot.surface, event.tiles)
 end)
+-- Other mods (MTS included) may re-tile script-side; stay current.
+script.on_event(defines.events.script_raised_set_tiles, function(event)
+    on_tiles_changed(game.surfaces[event.surface_index], event.tiles)
+end)
 
 script.on_nth_tick(30, function()
     collapse.on_heartbeat()
     caverns.on_heartbeat()
+end)
+
+-- Mirror housekeeping (ADR 0009). Wipe on join: every peer — including the
+-- joiner, who starts empty — then derives identical cache content from
+-- identical events, which is what lockstep requires of local caches.
+script.on_event(defines.events.on_player_joined_game, function()
+    mirror.wipe()
+    collapse.wipe_cache()
+end)
+script.on_event(defines.events.on_surface_deleted, function(event)
+    mirror.drop_surface(event.surface_index)
+    collapse.drop_surface_cache(event.surface_index)
+end)
+script.on_event(defines.events.on_surface_cleared, function(event)
+    mirror.drop_surface(event.surface_index)
+    collapse.drop_surface_cache(event.surface_index)
+end)
+-- Two-strike chunk eviction keeps RAM bounded to active areas.
+script.on_nth_tick(1800, function()
+    mirror.sweep()
+end)
+
+-- Support Struts completing widens every wall's reach instantly: re-judge
+-- the cells currently wearing warning markers so stale warnings clear.
+script.on_event(defines.events.on_research_finished, function(event)
+    if not event.research.name:find("diggy-support-reach", 1, true) then return end
+    -- Every wall's cached contribution just changed: start over.
+    collapse.wipe_cache()
+    for wkey in pairs(storage.warn_renders or {}) do
+        local si, cx, cy = wkey:match("^(%d+):(-?%d+),(-?%d+)$")
+        local surface = si and game.surfaces[tonumber(si)]
+        if surface and surface.valid then
+            collapse.evaluate_around(surface, { x = tonumber(cx), y = tonumber(cy) }, 2)
+        end
+    end
 end)
 
 
@@ -265,6 +322,18 @@ end)
 commands.add_command("diggy-stress", { "diggy.command-stress" }, function(event)
     local player = event.player_index and game.get_player(event.player_index)
     if player then collapse.debug_overlay(player) end
+end)
+
+commands.add_command("diggy-mirror-check", { "diggy.command-mirror-check" }, function(event)
+    local player = event.player_index and game.get_player(event.player_index)
+    if not player then return end
+    if not player.admin then
+        player.print({ "diggy.admin-only" })
+        return
+    end
+    local p = player.position
+    local r = mirror.check(player.surface, p.x - 96, p.y - 96, p.x + 96, p.y + 96)
+    player.print({ "diggy.mirror-check", r.chunks, r.mismatches, r.first or "-" })
 end)
 
 -- Pop-text animation: per tick, but a single table check when nothing is

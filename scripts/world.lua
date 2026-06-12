@@ -4,6 +4,7 @@
 -- (ADR 0005) — identical digging yields identical worlds across MTS teams.
 local Simplex = require("scripts.lib.simplex")
 local hash = require("scripts.lib.hash")
+local mirror = require("scripts.lib.mirror")
 local ore_veins = require("scripts.ore_veins")
 
 local world = {}
@@ -81,6 +82,7 @@ local function flood_water(surface, seed, x, y)
         end
     end
     surface.set_tiles(tiles, true, false)
+    mirror.set_tiles(surface, tiles)
     -- Rescue anyone the new shoreline clipped.
     for _, character in pairs(surface.find_entities_filtered {
         type = "character",
@@ -105,10 +107,13 @@ local function make_wall(surface, seed, x, y)
         flood_water(surface, seed, x, y)
         return
     end
-    surface.set_tiles({ { name = floor_tile(seed, x, y), position = { x, y } } })
+    local floor = floor_tile(seed, x, y)
+    surface.set_tiles({ { name = floor, position = { x, y } } })
     local tree = Simplex.d2(x * TREES.scale, y * TREES.scale, seed + TREES.seed) > TREES.threshold
     local name = tree and "diggy-tree" or "diggy-rock"
     surface.create_entity { name = name, position = { x + 0.5, y + 0.5 }, force = "neutral" }
+    mirror.set_floor(surface, x, y, floor)
+    mirror.set_rock(surface, { x = x, y = y }, true)
 end
 
 -- Carve a tile fully open (cavern carving): removes any wall entity, opens
@@ -123,7 +128,8 @@ function world.carve_tile(surface, x, y, force, skip_vein)
         name = { "diggy-rock", "diggy-tree" },
         area = { { x + 0.05, y + 0.05 }, { x + 0.95, y + 0.95 } },
     }) do
-        entity.destroy()
+        entity.destroy() -- no event fires for destroy(): tell the mirror
+        mirror.set_rock(surface, { x = x, y = y }, false)
     end
     if not is_void(surface, x, y) then return false end
 
@@ -132,7 +138,9 @@ function world.carve_tile(surface, x, y, force, skip_vein)
         flood_water(surface, seed, x, y)
         return false
     end
-    surface.set_tiles({ { name = floor_tile(seed, x, y), position = { x, y } } })
+    local floor = floor_tile(seed, x, y)
+    surface.set_tiles({ { name = floor, position = { x, y } } })
+    mirror.set_floor(surface, x, y, floor)
     if not skip_vein then
         ore_veins.materialize(surface, x, y, force)
     end
@@ -232,6 +240,8 @@ function build_chunk(surface, area)
             surface.create_entity { name = "fish", position = p }
         end
     end
+    -- Bulk rebuild: any cached mirror of this chunk is stale wholesale.
+    mirror.drop_chunk_at(surface, lt.x, lt.y)
 end
 
 function chunk_key(surface, x, y)

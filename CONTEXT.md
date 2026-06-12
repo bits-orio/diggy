@@ -52,8 +52,14 @@ An entity that counteracts stress on nearby ceiling (walls, refined flooring, re
 _Avoid_: support beam entity
 
 **Stress**:
-The structural load on a ceiling cell, computed live from current geometry (open floor nearby minus support contributions) whenever the world changes — never stored (ADR 0008). Identical geometry always reads identically.
+The structural load on a ceiling cell, computed live from current geometry (open floor nearby minus support contributions) whenever the world changes — never stored as truth (ADR 0008). Identical geometry always reads identically.
 _Avoid_: stress map, ledger (ADR-0008 removed the accumulated form)
+
+**World mirror**:
+The chunk-local, never-saved copy of the world facts stress reads (tile codes + support records), maintained by assignment at the mutation choke points and rebuilt from the engine on demand (ADR 0009). `/diggy-mirror-check` proves it exact.
+
+**Stress cache**:
+The incrementally-maintained cell values layered on the mirror (ADR 0009). Candidates come from the cache; any marker or collapse decision is verified against a fresh computation first, and a rolling audit re-derives cells continuously. Wiped on player join and Support Struts research.
 
 **Collapse**:
 The cave-in that re-seals an area with rock cover when stress exceeds the threshold. Entities in the area are crushed into buried crushed remains; the terrain and ore beneath persist.

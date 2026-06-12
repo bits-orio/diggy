@@ -8,7 +8,11 @@
 -- unsupported cell reads exactly 4.0 against the 3.57 threshold, and a
 -- stone-wall lattice with 3-tile gaps holds (~2.5-3.0). Wall strength 5 is
 -- the deliberate deviation from the original's 3 (see ADR 0008 history).
+--
+-- Reads go through the world mirror (ADR 0009) — pure Lua, no API calls in
+-- the hot path. Rock-grade cover folds into the same disc pass as the load.
 local hash = require("scripts.lib.hash")
+local mirror = require("scripts.lib.mirror")
 local mts = require("scripts.mts")
 local pop_text = require("scripts.pop_text")
 
@@ -20,21 +24,14 @@ local COLLAPSE_DELAY_TICKS = 150 -- original: 2.5s
 local COLLAPSE_MASK_FACTOR = 16 -- original: collapse_threshold_total_strength
 local LOAD = 4.0 -- a fully open, unsupported cell
 
+-- fill_cell's spared-entity check (mirror folds rock-grade cover into tile
+-- codes; walls/reactors live in its support lists).
 local SUPPORTS = {
     ["diggy-rock"] = 2,
     ["diggy-tree"] = 2,
     ["diggy-rubble"] = 2,
     ["stone-wall"] = 5,
     ["nuclear-reactor"] = 6,
-}
-local TILE_SUPPORTS = {
-    ["stone-path"] = 0.03,
-    ["concrete"] = 0.04,
-    ["hazard-concrete-left"] = 0.04,
-    ["hazard-concrete-right"] = 0.04,
-    ["refined-concrete"] = 0.06,
-    ["refined-hazard-concrete-left"] = 0.06,
-    ["refined-hazard-concrete-right"] = 0.06,
 }
 
 collapse.SUPPORT_NAMES = { "diggy-rock", "diggy-tree", "diggy-rubble", "stone-wall", "nuclear-reactor" }
@@ -88,6 +85,35 @@ local function mask_for(radius)
 end
 local BASE_MASK = mask_for(BASE_RADIUS)
 
+-- The base mask flattened for the hot loop (oy outer, ox inner).
+local BASE_W = {}
+for oy = -BASE_RADIUS, BASE_RADIUS do
+    for ox = -BASE_RADIUS, BASE_RADIUS do
+        BASE_W[#BASE_W + 1] = BASE_MASK.value_of(ox * ox + oy * oy)
+    end
+end
+
+-- Per-reach contribution LUTs for walls/reactors: strength multiplier by
+-- (dx+12)*25 + dy+13, replacing a closure call per wall per cell.
+local REACH_LUT = {}
+local function lut_for(reach)
+    local lut = REACH_LUT[reach]
+    if not lut then
+        local mask = mask_for(reach)
+        local scale = (mask.points / BASE_MASK.points) * 4
+        lut = {}
+        for dx = -12, 12 do
+            for dy = -12, 12 do
+                lut[(dx + 12) * 25 + dy + 13] = scale * mask.value_of(dx * dx + dy * dy)
+            end
+        end
+        REACH_LUT[reach] = lut
+    end
+    return lut
+end
+
+local FLOOR_SUPPORT = mirror.FLOOR_SUPPORT
+
 function collapse.on_init()
     storage.pending_collapses = {}
     storage.collapse_count = {}
@@ -104,65 +130,67 @@ collapse.protection_check = nil
 
 -- Live Support Struts reach per force: research benefits ALL walls at once.
 local reach_cache, reach_cache_tick = {}, -1
-local function force_reach(force)
+local function reach_for(force_index)
     if reach_cache_tick ~= game.tick then
         reach_cache, reach_cache_tick = {}, game.tick
     end
-    local cached = reach_cache[force.index]
-    if cached then return cached end
-    local reach = BASE_RADIUS
-    for i = 1, 6 do
-        local tech = force.technologies["diggy-support-reach-" .. i]
-        if tech and tech.researched then reach = reach + 1 end
+    local reach = reach_cache[force_index]
+    if not reach then
+        local force = game.forces[force_index]
+        reach = BASE_RADIUS
+        for i = 1, 6 do
+            local tech = force.technologies["diggy-support-reach-" .. i]
+            if tech and tech.researched then reach = reach + 1 end
+        end
+        reach_cache[force_index] = reach
     end
-    reach_cache[force.index] = reach
     return reach
+end
+
+-- Evaluation radius covering everything a force's supports influence.
+function collapse.reach_radius(force)
+    return reach_for(force.index) + 2
 end
 
 -- ── The function (cell coords are even; a cell spans 2x2 tiles) ──────────
 
+local wall_scratch = {}
+local window = {}
+-- Window indices of the cell's own 2x2 tiles (ox, oy in {0, 1}).
+local OWN = { 41, 42, 50, 51 }
+
 function collapse.compute_cell(surface, cx, cy)
-    -- One pass over the base mask: open-ceiling load + own-cell flooring.
-    local load_w = 0
-    local flooring = 0
-    for ox = -BASE_RADIUS, BASE_RADIUS do
-        for oy = -BASE_RADIUS, BASE_RADIUS do
-            local w = BASE_MASK.value_of(ox * ox + oy * oy)
-            if w > 0 then
-                local tile = surface.get_tile(cx + ox, cy + oy)
-                if tile.valid then
-                    local name = tile.name
-                    if name ~= "out-of-map" and not name:find("water", 1, true) then
-                        load_w = load_w + w
-                        if ox >= 0 and ox <= 1 and oy >= 0 and oy <= 1 then
-                            local ts = TILE_SUPPORTS[name]
-                            if ts then flooring = flooring + ts end
-                        end
-                    end
-                end
+    -- One pass over the base mask via the mirror window: open-floor load and
+    -- rock-grade support (strength 2, base reach — same disc, so it folds in).
+    mirror.fill_window(surface, cx, cy, window)
+    local load_w, rock_w = 0, 0
+    for i = 1, 81 do
+        local w = BASE_W[i]
+        if w > 0 then
+            local v = window[i]
+            if v >= 8 then
+                load_w = load_w + w
+                rock_w = rock_w + w
+            elseif v >= 2 then
+                load_w = load_w + w
             end
         end
     end
-    -- A cell holds 4 mask points; fully open ⇒ 4 x Σw = LOAD.
-    local value = LOAD * load_w - flooring
+    -- Fully open ⇒ LOAD; a rock tile nets -(2 x 4 x w) against its own +4w.
+    local value = LOAD * load_w - 8 * rock_w
+    for k = 1, 4 do
+        local fs = FLOOR_SUPPORT[window[OWN[k]] % 8]
+        if fs then value = value - fs end
+    end
 
-    -- Supports within maximum possible reach, each by its own (live) mask.
-    for _, entity in pairs(surface.find_entities_filtered {
-        name = collapse.SUPPORT_NAMES,
-        position = { cx + 1, cy + 1 },
-        radius = MAX_REACH + 1.5,
-    }) do
-        local strength = SUPPORTS[entity.name]
-        local reach = BASE_RADIUS
-        if entity.name == "stone-wall" or entity.name == "nuclear-reactor" then
-            reach = force_reach(entity.force)
-        end
-        local mask = mask_for(reach)
-        local dx = cx - math.floor(entity.position.x)
-        local dy = cy - math.floor(entity.position.y)
-        local w = mask.value_of(dx * dx + dy * dy)
-        if w > 0 then
-            value = value - strength * (mask.points / BASE_MASK.points) * 4 * w
+    -- Walls and reactors, by their force's live researched reach.
+    local n = mirror.walls_near(surface, cx, cy, wall_scratch)
+    for i = 1, n do
+        local e = wall_scratch[i]
+        local dx, dy = cx - e.x, cy - e.y
+        if dx >= -12 and dx <= 12 and dy >= -12 and dy <= 12 then
+            local c = lut_for(reach_for(e.f))[(dx + 12) * 25 + dy + 13]
+            if c > 0 then value = value - e.s * c end
         end
     end
     return value
@@ -175,8 +203,7 @@ end
 -- can fall. Every evaluator must apply this — values at void cells are
 -- measurement artifacts, not hazards.
 local function cell_exists(surface, cx, cy)
-    local tile = surface.get_tile(cx, cy)
-    return tile.valid and tile.name ~= "out-of-map"
+    return mirror.tile_value(surface, cx, cy) ~= 0
 end
 
 local function sync_marker(surface, cx, cy, value)
@@ -229,22 +256,183 @@ local function trigger(surface, cx, cy, player_index)
     }
 end
 
--- THE entry point after any world-changing event: evaluate every cell within
--- `radius` tiles, sync warning markers, trigger pendings.
-function collapse.evaluate_around(surface, position, radius, player_index)
-    radius = radius or (BASE_RADIUS + 2)
-    local x0, y0 = math.floor(position.x), math.floor(position.y)
-    for cx = 2 * math.floor((x0 - radius) * 0.5), x0 + radius, 2 do
-        for cy = 2 * math.floor((y0 - radius) * 0.5), y0 + radius, 2 do
-            if cell_exists(surface, cx, cy) then
-                local value = collapse.compute_cell(surface, cx, cy)
-                sync_marker(surface, cx, cy, value)
-                if value > STRESS_THRESHOLD then
-                    trigger(surface, cx, cy, player_index)
+-- ── Layer-2 stress cache (ADR 0009): incrementally maintained from mirror
+-- deltas, never trusted at the moment of action. Lives in locals: wiped on
+-- player join (lockstep), on Support Struts research (reach changes every
+-- wall's contribution), and follows mirror chunk evictions via bulk drops.
+local stress_cache = {} -- [surface_index][cx][cy] = value
+
+local function cache_col(surface_index, cx)
+    local sx = stress_cache[surface_index]
+    if not sx then
+        sx = {}
+        stress_cache[surface_index] = sx
+    end
+    local col = sx[cx]
+    if not col then
+        col = {}
+        sx[cx] = col
+    end
+    return col
+end
+
+function collapse.wipe_cache()
+    stress_cache = {}
+end
+
+function collapse.drop_surface_cache(surface_index)
+    stress_cache[surface_index] = nil
+end
+
+-- Deltas are the ± of the exact terms compute_cell uses — symmetric by
+-- construction, applied only to cells already cached.
+mirror.on_tile_change(function(surface_index, x, y, old, new)
+    local sx = stress_cache[surface_index]
+    if not sx then return end
+    local ob, nb = old % 8, new % 8
+    local d_open = (nb >= 2 and 1 or 0) - (ob >= 2 and 1 or 0)
+    local d_rock = (new >= 8 and 1 or 0) - (old >= 8 and 1 or 0)
+    if d_open ~= 0 or d_rock ~= 0 then
+        local amount = LOAD * d_open - 8 * d_rock
+        -- First EVEN anchor at or inside the mask bound (never outside: the
+        -- LUT has no entries past it).
+        for cx = (x - 4) + ((x - 4) % 2), x + 4, 2 do
+            local col = sx[cx]
+            if col then
+                local oxi = (x - cx) + 5 -- BASE_W is (oy+4)*9 + ox + 5
+                for cy = (y - 4) + ((y - 4) % 2), y + 4, 2 do
+                    local v = col[cy]
+                    if v then
+                        local w = BASE_W[(y - cy + 4) * 9 + oxi]
+                        if w > 0 then col[cy] = v + amount * w end
+                    end
                 end
             end
         end
     end
+    local d_fs = (FLOOR_SUPPORT[nb] or 0) - (FLOOR_SUPPORT[ob] or 0)
+    if d_fs ~= 0 then
+        local col = sx[2 * math.floor(x * 0.5)]
+        local cy = 2 * math.floor(y * 0.5)
+        if col and col[cy] then col[cy] = col[cy] - d_fs end
+    end
+end)
+
+mirror.on_wall_change(function(surface_index, record, sign)
+    local sx = stress_cache[surface_index]
+    if not sx then return end
+    local lut = lut_for(reach_for(record.f))
+    local amount = sign * record.s
+    for cx = (record.x - 12) + ((record.x - 12) % 2), record.x + 12, 2 do
+        local col = sx[cx]
+        if col then
+            local dxi = (cx - record.x + 12) * 25 + 13
+            for cy = (record.y - 12) + ((record.y - 12) % 2), record.y + 12, 2 do
+                local v = col[cy]
+                if v then
+                    local c = lut[dxi + (cy - record.y)]
+                    if c > 0 then col[cy] = v - amount * c end
+                end
+            end
+        end
+    end
+end)
+
+-- A chunk rebuilt or evicted from the mirror can no longer feed deltas:
+-- forget every cell whose computation could have read into it.
+mirror.on_bulk_change(function(surface_index, x1, y1, x2, y2)
+    local sx = stress_cache[surface_index]
+    if not sx then return end
+    for cx = 2 * math.floor((x1 - 12) * 0.5), x2 + 12, 2 do
+        local col = sx[cx]
+        if col then
+            for cy = 2 * math.floor((y1 - 12) * 0.5), y2 + 12, 2 do
+                col[cy] = nil
+            end
+        end
+    end
+end)
+
+-- Re-derive a cell from facts before acting on its cached value. Drift means
+-- a delta-coverage bug: correct it and say so loudly.
+local function verified(surface, col, cx, cy, value)
+    local truth = collapse.compute_cell(surface, cx, cy)
+    if math.abs(truth - value) > 0.005 then
+        log(string.format("[DIGGY] stress cache drift at %d,%d on %s: cached=%.3f truth=%.3f",
+            cx, cy, surface.name, value, truth))
+        col[cy] = truth
+    end
+    return truth
+end
+
+local audit_counter = 0
+
+-- THE entry point after any world-changing event: judge every cell within
+-- `radius` tiles against its cached value; recompute on miss; verify any
+-- cached value before it changes a marker or triggers a collapse.
+function collapse.evaluate_around(surface, position, radius, player_index)
+    radius = radius or (BASE_RADIUS + 2)
+    local si = surface.index
+    local renders = storage.warn_renders or {}
+    local x0, y0 = math.floor(position.x), math.floor(position.y)
+    for cx = 2 * math.floor((x0 - radius) * 0.5), x0 + radius, 2 do
+        local col = cache_col(si, cx)
+        for cy = 2 * math.floor((y0 - radius) * 0.5), y0 + radius, 2 do
+            if cell_exists(surface, cx, cy) then
+                local value = col[cy]
+                local fresh = false
+                if value == nil then
+                    value = collapse.compute_cell(surface, cx, cy)
+                    col[cy] = value
+                    fresh = true
+                end
+                local marked = renders[si .. ":" .. cx .. "," .. cy] ~= nil
+                if (value > NEAR_THRESHOLD) ~= marked then
+                    if not fresh then
+                        value = verified(surface, col, cx, cy, value)
+                        fresh = true
+                    end
+                    sync_marker(surface, cx, cy, value)
+                end
+                if value > STRESS_THRESHOLD then
+                    if not fresh then
+                        value = verified(surface, col, cx, cy, value)
+                    end
+                    if value > STRESS_THRESHOLD then
+                        trigger(surface, cx, cy, player_index)
+                    end
+                end
+            end
+        end
+    end
+    -- Rolling audit: every 16th evaluation re-derives its center cell, so a
+    -- systematic delta bug surfaces (and self-corrects) within seconds.
+    audit_counter = audit_counter + 1
+    if audit_counter % 16 == 0 then
+        local cx, cy = 2 * math.floor(x0 * 0.5), 2 * math.floor(y0 * 0.5)
+        local col = cache_col(si, cx)
+        if col[cy] and cell_exists(surface, cx, cy) then
+            verified(surface, col, cx, cy, col[cy])
+        end
+    end
+end
+
+-- Cache health probe (debug remote): cached cells re-derived over an area.
+function collapse.cache_check(surface, x1, y1, x2, y2)
+    local cached, max_delta = 0, 0
+    local sx = stress_cache[surface.index]
+    for cx = 2 * math.floor(x1 * 0.5), x2, 2 do
+        local col = sx and sx[cx]
+        for cy = 2 * math.floor(y1 * 0.5), y2, 2 do
+            local v = col and col[cy]
+            if v then
+                cached = cached + 1
+                local d = math.abs(v - collapse.compute_cell(surface, cx, cy))
+                if d > max_delta then max_delta = d end
+            end
+        end
+    end
+    return { cached = cached, max_delta = max_delta }
 end
 
 -- Cells over threshold within a disc (cavern arming, diagnostics).
@@ -281,8 +469,7 @@ function collapse.debug_overlay(player)
     for x = px - 40, px + 40, 2 do
         for y = py - 40, py + 40, 2 do
             local cx, cy = 2 * math.floor(x * 0.5), 2 * math.floor(y * 0.5)
-            local tile = surface.get_tile(cx, cy)
-            if tile.valid and tile.name ~= "out-of-map" then
+            if cell_exists(surface, cx, cy) then
                 local value = collapse.compute_cell(surface, cx, cy)
                 if value > 0.05 or value < -0.05 then
                     local t = math.min(math.max(value / STRESS_THRESHOLD, 0), 1)
@@ -377,6 +564,7 @@ local function fill_cell(surface, cellx, celly, density, seed)
                 and not tile.name:find("water", 1, true)
                 and (density >= 1 or hash.roll(seed, tx, ty, 80) < density) then
                 surface.create_entity { name = "diggy-rubble", position = { tx + 0.5, ty + 0.5 }, force = "neutral" }
+                mirror.set_rock(surface, { x = tx, y = ty }, true)
                 rocks = rocks + 1
             end
         end

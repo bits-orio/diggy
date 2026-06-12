@@ -3,6 +3,7 @@
 -- tiles materialize veins and chart, but per-tile spawn/treasure rolls are
 -- skipped — the room's contents are the sole source of its danger and loot.
 local hash = require("scripts.lib.hash")
+local mirror = require("scripts.lib.mirror")
 local world = require("scripts.world")
 local treasure = require("scripts.treasure")
 local dig_spawner = require("scripts.dig_spawner")
@@ -134,6 +135,7 @@ local function populate_sanctuary(surface, cx, cy, radius, seed)
         end
     end
     surface.set_tiles(tiles)
+    mirror.set_tiles(surface, tiles)
     -- Place fish directly on the pool tiles; find_non_colliding from land
     -- tends to fail for water-bound entities.
     for _, offset in pairs({ { 0.5, 0.5 }, { -0.5, -0.5 }, { 1.5, -0.5 } }) do
