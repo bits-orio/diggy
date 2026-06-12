@@ -96,8 +96,17 @@ local function sync_chunk(surface, cx32, cy32)
         end
         for _, e in pairs(surface.find_entities_filtered { area = area, name = WALL_NAMES }) do
             local p = e.position
-            walls[#walls + 1] =
+            local record =
                 { x = math.floor(p.x), y = math.floor(p.y), s = support_strength(e.name), f = e.force.index }
+            if e.name == "stone-wall" then
+                -- Crowding fact: how many stone walls touch this one
+                -- (8-way). Reactors neither crowd nor get crowded.
+                record.n = surface.count_entities_filtered {
+                    name = "stone-wall",
+                    area = { { record.x - 1, record.y - 1 }, { record.x + 2, record.y + 2 } },
+                } - 1
+            end
+            walls[#walls + 1] = record
         end
     end
     return { grid = grid, walls = walls, idle = false }
@@ -234,28 +243,76 @@ function mirror.refresh_tile(surface, position)
     mirror.set_floor(surface, x, y, surface.get_tile(x, y).name)
 end
 
+-- Stone-wall records (n ~= nil) in cached chunks touching (x, y), 8-way.
+-- Uncached chunks need no correction: they engine-count n when they sync.
+local function adjacent_wall_records(surface, x, y)
+    local found = {}
+    for ax = x - 1, x + 1 do
+        for ay = y - 1, y + 1 do
+            if ax ~= x or ay ~= y then
+                local chunk = cached_chunk(surface, ax, ay)
+                if chunk then
+                    for _, v in pairs(chunk.walls) do
+                        if v.x == ax and v.y == ay and v.n then
+                            found[#found + 1] = v
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return found
+end
+
+-- Re-announce a record whose neighbour count is changing: its cached
+-- contribution leaves at the old count and returns at the new one.
+local function recount(surface_index, record, delta)
+    if wall_listener then wall_listener(surface_index, record, -1) end
+    record.n = math.max(0, record.n + delta)
+    if wall_listener then wall_listener(surface_index, record, 1) end
+end
+
 function mirror.support_added(entity)
     local chunk = cached_chunk(entity.surface, entity.position.x, entity.position.y)
     if not chunk then return end
     local x, y = math.floor(entity.position.x), math.floor(entity.position.y)
+    local si = entity.surface.index
     local record = { x = x, y = y, s = support_strength(entity.name), f = entity.force.index }
+    if entity.name == "stone-wall" then
+        -- The entity already exists in the engine: count includes it.
+        record.n = entity.surface.count_entities_filtered {
+            name = "stone-wall",
+            area = { { x - 1, y - 1 }, { x + 2, y + 2 } },
+        } - 1
+        for _, v in pairs(adjacent_wall_records(entity.surface, x, y)) do
+            recount(si, v, 1)
+        end
+    end
     chunk.walls[#chunk.walls + 1] = record
     chunk.idle = false
-    if wall_listener then wall_listener(entity.surface.index, record, 1) end
+    if wall_listener then wall_listener(si, record, 1) end
 end
 
 function mirror.support_removed(entity)
     -- Force-synced, same reasoning as set_rock: the dying wall may still be
     -- visible to a mid-event chunk sync; correcting after guarantees truth.
     local x, y = math.floor(entity.position.x), math.floor(entity.position.y)
+    local si = entity.surface.index
     local chunk = chunk_at(entity.surface, math.floor(x / 32), math.floor(y / 32))
     local walls = chunk.walls
+    local was_wall = false
     for i = #walls, 1, -1 do
         if walls[i].x == x and walls[i].y == y then
             local record = walls[i]
+            was_wall = record.n ~= nil
             walls[i] = walls[#walls]
             walls[#walls] = nil
-            if wall_listener then wall_listener(entity.surface.index, record, -1) end
+            if wall_listener then wall_listener(si, record, -1) end
+        end
+    end
+    if was_wall then
+        for _, v in pairs(adjacent_wall_records(entity.surface, x, y)) do
+            recount(si, v, -1)
         end
     end
     chunk.idle = false

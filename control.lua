@@ -361,7 +361,9 @@ end)
 script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
     if event.setting == "diggy-enemy-expansion" then
         dig_spawner.apply_expansion_setting()
-    elseif event.setting == "diggy-wall-support" or event.setting == "diggy-strut-strength-max" then
+    elseif event.setting == "diggy-wall-support"
+        or event.setting == "diggy-strut-strength-max"
+        or event.setting == "diggy-wall-crowding" then
         -- The strength basis moved: wall records carry strength (rebuild
         -- facts), LUTs and cached values bake it in (rebuild derivations),
         -- then re-judge what's currently warning. Everything else updates

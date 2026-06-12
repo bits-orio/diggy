@@ -63,6 +63,15 @@ data:extend({
         order = "c-e",
     },
     {
+        type = "double-setting",
+        setting_type = "runtime-global",
+        name = "diggy-wall-crowding",
+        default_value = 1,
+        minimum_value = 0,
+        maximum_value = 5,
+        order = "c-f",
+    },
+    {
         type = "bool-setting",
         setting_type = "runtime-global",
         name = "diggy-collapse-broadcast",

@@ -161,6 +161,26 @@ function collapse.reach_radius(force)
     return reach_for(force.index) + 2
 end
 
+-- Crowding penalty (host lever): touching walls share the load path, so a
+-- wall's support divides by (1 + K x neighbours). Isolated pillars (n = 0)
+-- are untouched; solid lines stop multiplying support.
+local crowding_value, crowding_tick = 0, -1
+local function crowding()
+    if crowding_tick ~= game.tick then
+        crowding_value = settings.global["diggy-wall-crowding"].value
+        crowding_tick = game.tick
+    end
+    return crowding_value
+end
+
+local function effective_strength(record, k)
+    local n = record.n
+    if n and n > 0 and k > 0 then
+        return record.s / (1 + k * n)
+    end
+    return record.s
+end
+
 -- ── The function (cell coords are even; a cell spans 2x2 tiles) ──────────
 
 local wall_scratch = {}
@@ -192,14 +212,16 @@ function collapse.compute_cell(surface, cx, cy)
         if fs then value = value - fs end
     end
 
-    -- Walls and reactors, by their force's live researched reach.
+    -- Walls and reactors, by their force's live researched reach and
+    -- crowding-discounted strength.
+    local k = crowding()
     local n = mirror.walls_near(surface, cx, cy, wall_scratch)
     for i = 1, n do
         local e = wall_scratch[i]
         local dx, dy = cx - e.x, cy - e.y
         if dx >= -12 and dx <= 12 and dy >= -12 and dy <= 12 then
             local c = lut_for(reach_for(e.f))[(dx + 12) * 25 + dy + 13]
-            if c > 0 then value = value - e.s * c end
+            if c > 0 then value = value - effective_strength(e, k) * c end
         end
     end
     return value
@@ -379,7 +401,7 @@ mirror.on_wall_change(function(surface_index, record, sign)
     local sx = stress_cache[surface_index]
     if not sx then return end
     local lut = lut_for(reach_for(record.f))
-    local amount = sign * record.s
+    local amount = sign * effective_strength(record, crowding())
     for cx = (record.x - 12) + ((record.x - 12) % 2), record.x + 12, 2 do
         local col = sx[cx]
         if col then
