@@ -68,7 +68,8 @@ function pop_text.tick(now)
             local alpha = progress < 0.6 and 1 or (1 - (progress - 0.6) / 0.4)
             obj.target = { x = e.x + dx, y = e.y + dy }
             obj.scale = e.base_scale * mul
-            obj.color = { r = e.r, g = e.g, b = e.b, a = alpha }
+            -- Premultiplied alpha, or the fade-out glows instead of fading.
+            obj.color = { r = e.r * alpha, g = e.g * alpha, b = e.b * alpha, a = alpha }
             entries[write] = e
             write = write + 1
         elseif obj then

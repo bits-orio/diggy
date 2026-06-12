@@ -250,7 +250,10 @@ end
 -- quiet haze with only the genuinely hot cells popping.
 local function warn_tint(value)
     local t = math.min(math.max((value - NEAR_THRESHOLD) / (STRESS_THRESHOLD - NEAR_THRESHOLD), 0), 1)
-    return { r = 1, g = 0.9 - 0.82 * t, b = 0.05, a = 0.2 + 0.8 * t }
+    local a = 0.2 + 0.8 * t
+    -- Premultiplied alpha: the engine treats unmultiplied RGB at low
+    -- alpha as a bright additive glow, not a fade.
+    return { r = a, g = (0.9 - 0.82 * t) * a, b = 0.05 * a, a = a }
 end
 
 local function sync_marker(surface, cx, cy, value)
