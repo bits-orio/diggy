@@ -1,4 +1,29 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.2.0
+Date: 2026-06-12
+  Major Features:
+    - The stress engine is rebuilt on pure geometry: a ceiling's stress is computed live from what is actually around it, never accumulated in hidden bookkeeping. Identical layouts always read identically, collapses happen exactly where the geometry says, and the old failure modes — permanently stressed areas, unpredictable collapse spots, poisoned saves — are impossible by construction.
+    - The rebuilt engine is also ~100x faster (a full dig costs about a millisecond, everything included), sized for 20-team Multi-Team Support servers. Idle surfaces cost nothing; saves carry no stress data at all.
+    - You can SEE the ceiling now. Warning triangles (in ALT view) shade yellow to red and fade faint to solid with severity, so a deliberately tight build reads as a quiet haze while real trouble pops. Every cell that actually fails gets a thin box around its exact 2x2 tiles with a live countdown inside — and an honest verdict: red COLLAPSE! when it falls, green IT HOLDS! only when your supports genuinely saved it.
+    - Cavern countdowns use the same per-cell telegraph, and the countdown now OWNS its grace period: nothing inside the cavern can collapse until the timer ends, no matter what you build or dig meanwhile. Wall up the marked cells and the expiry spares everything you saved. Duration is host-configurable (default 12 seconds).
+    - The spawn carve-out comes pre-pillared with a minable stone-wall lattice, so the starting cave is held up by the same honest geometry you build with later.
+  Features:
+    - Replacing a pillar (or otherwise re-supporting the spot) during a collapse warning reliably rescues it: the cell is re-judged against the full threshold at the moment of truth.
+    - Support Struts research now benefits ALL of a force's walls and reactors the instant a tier completes, not just ones placed afterwards.
+    - Three new host levers for the support economy, applied immediately when changed: wall support strength, Support Struts strength at max research, and the wall crowding penalty. Hover texts explain higher vs lower with concrete examples.
+    - Admin tooling: /diggy-mine sets your mining speed directly; /diggy-mirror-check verifies the stress engine's world cache against the live map; the /diggy-kit armor now carries 8 personal laser defenses and 2 MK2 shields with every piece (batteries included) pre-charged.
+  Balancing:
+    - Wall support strength defaults to 3 — the classic Diggy feel. Pillars every 3rd tile hold calm; every 4th tile runs visibly hot. (The previous 5 made walls strong enough that the ceiling rarely mattered.)
+    - Support Struts research extends reach only by default. It was silently multiplying every wall's total strength up to ~6x at max research on top of the reach.
+    - Touching walls now share one load path: each adjacent wall divides a wall's ceiling support (host-tunable). Solid wall lines no longer stack support without limit — two parallel lines could hold an 8-tile-wide gap by themselves. Spaced pillars are never affected.
+    - Digging no longer raises evolution. Clearing the nests your digging uncovers is penalty enough.
+    - Defaults pass, migrated automatically with a chat notice for saves still on old defaults: nest chance 2%, treasure 0.5%, caverns 5%, dig-spawn packs x2, cavern worms x1.5, cross-team collapse broadcasts off.
+  Bugfixes:
+    - Collapse rubble is its own inert thing: re-digging it never re-rolls the tile's outcomes, so the same worms no longer respawn from cleared collapses and phantom "tunnel breached" messages are gone.
+    - Cavern warning triangles paint the moment the room arms — big rooms previously showed nothing until something else nudged an evaluation nearby.
+    - The cavern countdown announcement matches the per-cell timers (it ran a visible second ahead).
+    - Faint markers and pop-text fades render as actual transparency instead of a bright glow (premultiplied alpha).
+---------------------------------------------------------------------------------------------------
 Version: 0.1.2
 Date: 2026-06-11
   Major Features:
