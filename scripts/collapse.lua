@@ -101,10 +101,15 @@ local function lut_for(reach)
     if not lut then
         local mask = mask_for(reach)
         -- A wider mask covers ~quadratically more points; scaling by the
-        -- full points ratio made each Support Struts tier multiply every
-        -- wall's total mass (~5.9x at max reach) on top of the reach
-        -- itself. Only a quarter of that mass bonus survives.
-        local scale = (1 + (mask.points / BASE_MASK.points - 1) / 4) * 4
+        -- full points ratio would make each Support Struts tier multiply
+        -- every wall's total mass (~5.9x at max reach) on top of the reach
+        -- itself. Instead the mass multiplier runs from 1 at base reach to
+        -- the host-tunable "strength at max research", interpolated by
+        -- area growth.
+        local max_ratio = mask_for(MAX_REACH).points / BASE_MASK.points
+        local strut_max = settings.global["diggy-strut-strength-max"].value
+        local ratio = mask.points / BASE_MASK.points
+        local scale = (1 + (ratio - 1) * (strut_max - 1) / (max_ratio - 1)) * 4
         lut = {}
         for dx = -12, 12 do
             for dy = -12, 12 do
@@ -322,6 +327,13 @@ local function cache_col(surface_index, cx)
 end
 
 function collapse.wipe_cache()
+    stress_cache = {}
+end
+
+-- A strength setting moved: the LUTs bake it in, and every cached value
+-- (and wall record — control wipes the mirror) is built on it.
+function collapse.stress_basis_changed()
+    REACH_LUT = {}
     stress_cache = {}
 end
 

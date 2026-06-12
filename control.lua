@@ -261,12 +261,9 @@ script.on_nth_tick(1800, function()
     mirror.sweep()
 end)
 
--- Support Struts completing widens every wall's reach instantly: re-judge
--- the cells currently wearing warning markers so stale warnings clear.
-script.on_event(defines.events.on_research_finished, function(event)
-    if not event.research.name:find("diggy-support-reach", 1, true) then return end
-    -- Every wall's cached contribution just changed: start over.
-    collapse.wipe_cache()
+-- Re-judge every cell currently wearing a warning marker — stale after
+-- anything that changes what supports are worth (research, host tuning).
+local function refresh_warned_cells()
     for wkey in pairs(storage.warn_renders or {}) do
         local si, cx, cy = wkey:match("^(%d+):(-?%d+),(-?%d+)$")
         local surface = si and game.surfaces[tonumber(si)]
@@ -274,6 +271,15 @@ script.on_event(defines.events.on_research_finished, function(event)
             collapse.evaluate_around(surface, { x = tonumber(cx), y = tonumber(cy) }, 2)
         end
     end
+end
+
+-- Support Struts completing widens every wall's reach instantly: re-judge
+-- the cells currently wearing warning markers so stale warnings clear.
+script.on_event(defines.events.on_research_finished, function(event)
+    if not event.research.name:find("diggy-support-reach", 1, true) then return end
+    -- Every wall's cached contribution just changed: start over.
+    collapse.wipe_cache()
+    refresh_warned_cells()
 end)
 
 
@@ -355,5 +361,13 @@ end)
 script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
     if event.setting == "diggy-enemy-expansion" then
         dig_spawner.apply_expansion_setting()
+    elseif event.setting == "diggy-wall-support" or event.setting == "diggy-strut-strength-max" then
+        -- The strength basis moved: wall records carry strength (rebuild
+        -- facts), LUTs and cached values bake it in (rebuild derivations),
+        -- then re-judge what's currently warning. Everything else updates
+        -- on the next world event near it.
+        mirror.wipe()
+        collapse.stress_basis_changed()
+        refresh_warned_cells()
     end
 end)

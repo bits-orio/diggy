@@ -30,7 +30,16 @@ mirror.FLOOR_SUPPORT = { [3] = 0.03, [4] = 0.04, [5] = 0.06 }
 
 local ROCK_NAMES = { "diggy-rock", "diggy-tree", "diggy-rubble" }
 local WALL_NAMES = { "stone-wall", "nuclear-reactor" }
-local WALL_STRENGTH = { ["stone-wall"] = 5, ["nuclear-reactor"] = 6 }
+
+-- Wall strength is host-tunable. Records carry the value they were built
+-- with, so a settings change wipes the mirror (control.lua) and records
+-- rebuild with the new strength.
+local function support_strength(name)
+    if name == "stone-wall" then
+        return settings.global["diggy-wall-support"].value
+    end
+    return 6 -- nuclear reactor
+end
 
 -- surfaces[surface_index][chunk_x][chunk_y] = {
 --   grid = int[1024], walls = { {x, y, s, f} ... }, idle = bool }
@@ -88,7 +97,7 @@ local function sync_chunk(surface, cx32, cy32)
         for _, e in pairs(surface.find_entities_filtered { area = area, name = WALL_NAMES }) do
             local p = e.position
             walls[#walls + 1] =
-                { x = math.floor(p.x), y = math.floor(p.y), s = WALL_STRENGTH[e.name], f = e.force.index }
+                { x = math.floor(p.x), y = math.floor(p.y), s = support_strength(e.name), f = e.force.index }
         end
     end
     return { grid = grid, walls = walls, idle = false }
@@ -229,7 +238,7 @@ function mirror.support_added(entity)
     local chunk = cached_chunk(entity.surface, entity.position.x, entity.position.y)
     if not chunk then return end
     local x, y = math.floor(entity.position.x), math.floor(entity.position.y)
-    local record = { x = x, y = y, s = WALL_STRENGTH[entity.name], f = entity.force.index }
+    local record = { x = x, y = y, s = support_strength(entity.name), f = entity.force.index }
     chunk.walls[#chunk.walls + 1] = record
     chunk.idle = false
     if wall_listener then wall_listener(entity.surface.index, record, 1) end
