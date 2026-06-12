@@ -100,7 +100,11 @@ local function lut_for(reach)
     local lut = REACH_LUT[reach]
     if not lut then
         local mask = mask_for(reach)
-        local scale = (mask.points / BASE_MASK.points) * 4
+        -- A wider mask covers ~quadratically more points; scaling by the
+        -- full points ratio made each Support Struts tier multiply every
+        -- wall's total mass (~5.9x at max reach) on top of the reach
+        -- itself. Only a quarter of that mass bonus survives.
+        local scale = (1 + (mask.points / BASE_MASK.points - 1) / 4) * 4
         lut = {}
         for dx = -12, 12 do
             for dy = -12, 12 do
@@ -241,7 +245,7 @@ local function sync_marker(surface, cx, cy, value)
     end
 end
 
-local function trigger(surface, cx, cy, player_index)
+local function trigger(surface, cx, cy, player_index, value)
     if not settings.global["diggy-collapse-enabled"].value then return end
     if collapse.protection_check and collapse.protection_check(surface, cx, cy) then return end
     for _, p in pairs(storage.pending_collapses) do
@@ -266,8 +270,8 @@ local function trigger(surface, cx, cy, player_index)
         surface = surface,
         left_top = { cx, cy },
         right_bottom = { cx + 2, cy + 2 },
-        color = { r = 1, g = 0.3, b = 0.05, a = 0.9 },
-        width = 3,
+        color = warn_tint(value or STRESS_THRESHOLD + 1),
+        width = 1,
     }
     local timer = rendering.draw_text {
         surface = surface,
@@ -296,21 +300,6 @@ local function clear_renders(pending)
     end
 end
 
--- Per-tick countdown refresh; a single length check when nothing pends.
-function collapse.tick()
-    local pending = storage.pending_collapses
-    if not pending or #pending == 0 then return end
-    local now = game.tick
-    for i = 1, #pending do
-        local p = pending[i]
-        if p.timer_id and not p.consumed then
-            local obj = rendering.get_object_by_id(p.timer_id)
-            if obj then
-                obj.text = string.format("%.1f", math.max(0, p.at_tick - now) / 60)
-            end
-        end
-    end
-end
 
 -- ── Layer-2 stress cache (ADR 0009): incrementally maintained from mirror
 -- deltas, never trusted at the moment of action. Lives in locals: wiped on
@@ -458,7 +447,7 @@ function collapse.evaluate_around(surface, position, radius, player_index)
                         value = verified(surface, col, cx, cy, value)
                     end
                     if value > STRESS_THRESHOLD then
-                        trigger(surface, cx, cy, player_index)
+                        trigger(surface, cx, cy, player_index, value)
                     end
                 end
             end
@@ -743,6 +732,31 @@ function collapse.sparse_collapse(surface, cells, force, seed)
         collapse.evaluate_around(surface, { x = live[1].x, y = live[1].y }, BASE_RADIUS * 3)
     end
     return rocks
+end
+
+-- Per-tick countdown refresh; a single length check when nothing pends.
+-- The box tracks the cell's live severity tint — supports placed during
+-- the countdown visibly cool it from red toward yellow.
+function collapse.tick()
+    local pending = storage.pending_collapses
+    if not pending or #pending == 0 then return end
+    local now = game.tick
+    for i = 1, #pending do
+        local p = pending[i]
+        if p.timer_id and not p.consumed then
+            local obj = rendering.get_object_by_id(p.timer_id)
+            if obj then
+                obj.text = string.format("%.1f", math.max(0, p.at_tick - now) / 60)
+            end
+            local sx = stress_cache[p.surface_index]
+            local col = sx and sx[p.x]
+            local value = col and col[p.y]
+            if value and p.box_id then
+                local box = rendering.get_object_by_id(p.box_id)
+                if box then box.color = warn_tint(value) end
+            end
+        end
+    end
 end
 
 -- The only timer in the mod: a 0.5s heartbeat that fires pending collapses.
