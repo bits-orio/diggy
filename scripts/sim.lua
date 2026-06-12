@@ -1,5 +1,4 @@
 -- Self-contained repeatable benchmark (/diggy-sim [bare|stop]):
---   1. vents the surface to a clean 2.0 baseline,
 --   2. clears a 32x32 hall east of the player at 4 digs/tick (real-time
 --      pacing so grace timers and collapse delays behave like play),
 --   3. maintains an EXACT square stone-wall lattice with 3-tile gaps
@@ -31,12 +30,21 @@ end
 -- Region dump: per tile "x,y,cell_stress,code" (#void ~water .floor W/R/T).
 local function dump_stress(s, stage)
     local surface = game.surfaces[s.surface_index]
-    local map = storage.stress[s.surface_index] or {}
+    local memo = {}
     local out = {}
     for y = s.y1 - 8, s.y1 + SIZE + 8 do
         for x = s.x1 - 8, s.x1 + SIZE + 8 do
             local cx, cy = 2 * math.floor(x * 0.5), 2 * math.floor(y * 0.5)
-            local v = map[cx .. "," .. cy] or 0
+            local mkey = cx .. "," .. cy
+            local v = memo[mkey]
+            if v == nil then
+                -- Mirror evaluate_around: cells whose anchor tile is void are
+                -- never evaluated by the engine, so the dump reads them as 0.
+                local anchor = surface.get_tile(cx, cy)
+                v = (anchor.valid and anchor.name ~= "out-of-map")
+                    and collapse.compute_cell(surface, cx, cy) or 0
+                memo[mkey] = v
+            end
             local t = surface.get_tile(x, y)
             local code = "."
             if not t.valid or t.name == "out-of-map" then
@@ -94,8 +102,6 @@ function sim.start(player, bare, slow)
     x1 = x1 - (x1 % 4)
     y1 = y1 - (y1 % 4)
 
-    local vented = collapse.vent_surface(surface, 2.0)
-
     storage.sim = {
         surface_index = surface.index,
         x1 = x1,
@@ -110,7 +116,7 @@ function sim.start(player, bare, slow)
         run_id = string.format("diggy-sim-%s-t%d", bare and "bare" or "pillared", game.tick),
         slow = slow or false,
     }
-    slog(storage.sim, string.format("start region=(%d,%d)..(%d,%d) pre-vented=%d cells artifacts=script-output/%s/", x1, y1, x1 + SIZE, y1 + SIZE, vented, storage.sim.run_id))
+    slog(storage.sim, string.format("start region=(%d,%d)..(%d,%d) artifacts=script-output/%s/", x1, y1, x1 + SIZE, y1 + SIZE, storage.sim.run_id))
     archive(storage.sim, "start")
     if player then player.print({ "diggy.sim-started", bare and "bare" or "pillared" }) end
 end

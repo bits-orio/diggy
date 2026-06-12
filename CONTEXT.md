@@ -52,11 +52,15 @@ An entity that counteracts stress on nearby ceiling (walls, refined flooring, re
 _Avoid_: support beam entity
 
 **Stress**:
-The per-tile structural load accumulated as terrain is revealed without nearby support. Tracked per surface.
+The structural load on a ceiling cell, computed live from current geometry (open floor nearby minus support contributions) whenever the world changes — never stored (ADR 0008). Identical geometry always reads identically.
+_Avoid_: stress map, ledger (ADR-0008 removed the accumulated form)
 
 **Collapse**:
 The cave-in that re-seals an area with rock cover when stress exceeds the threshold. Entities in the area are crushed into buried crushed remains; the terrain and ore beneath persist.
 _Avoid_: cave-in (in code; fine in prose)
+
+**Homestead lattice**:
+The stone-wall pillar grid (4-tile spacing, player-owned and minable) pre-placed across the spawn carve-out, so the starting cave is held up by the same honest geometry players build with later.
 
 **Crushed remains**:
 A non-colliding corpse entity left where a building was crushed by a collapse, holding its inventories — buried and lootable after re-digging. Opt-in (host setting, off by default): normally crushed buildings and their contents are simply destroyed.
@@ -86,7 +90,7 @@ _Avoid_: cave (ambiguous with the whole world)
 The space at the end of a cavern tunnel, with a depth-gated personality: empty cave, nest room (spawners and worms), hoard room (chest cluster), or rare sanctuary (grass, water, fish — a safe moment).
 
 **Arming**:
-A room's ceiling owes its stress debt the moment nothing guards it: nest rooms arm when their last worm dies; unguarded rooms arm at breach. Failing areas give a 15-second on-screen countdown, then shed roughly half their mass (a sparse collapse). Sanctuaries never arm. While worms live, no collapse can trigger in their room — the only way in is to fight.
+A room's ceiling faces judgment the moment nothing guards it: nest rooms arm when their last worm dies; unguarded rooms arm at breach. Arming sweeps the room for cells over threshold in the live geometry; failing areas give a 15-second on-screen countdown, then shed roughly half their mass (a sparse collapse) — pillars placed during the countdown are honored. Sanctuaries never arm. While worms live, no collapse can trigger in their room — the only way in is to fight.
 
 **Evolution pressure**:
 The contribution of total volume dug to enemy evolution — greed makes the baseline meaner, while depth decides what shows up.

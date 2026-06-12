@@ -197,13 +197,6 @@ local function make_room(surface, cx, cy, seed, force, carved)
         return radius, #opened
     end
 
-    -- The room's ceiling debt is loaded NOW, trigger-suppressed (the worms'
-    -- protection keeps it dormant), charged ONLY for tiles this room actually
-    -- opened: overlap with halls or other rooms never double-counts, so the
-    -- open-ceiling load stays capped at ~4 and pillars can always reach it.
-    if picked.kind ~= "sanctuary" then
-        collapse.arm_area(surface, opened, 0.9)
-    end
 
     local worm_ids = {}
     if picked.kind == "nest" then
@@ -339,13 +332,6 @@ function caverns.on_dig(dig)
         radius, room_opened = make_room(surface, cx, cy, seed, force, carved)
         min_x, min_y = math.min(min_x, cx - radius), math.min(min_y, cy - radius)
         max_x, max_y = math.max(max_x, cx + radius), math.max(max_y, cy + radius)
-    end
-
-    -- Tunnel tiles owe the same ceiling debt as everything else (rooms charge
-    -- their own in make_room). Uncharged tunnels were free open space —
-    -- inconsistent with dug halls, and visibly "unstressed" to players.
-    if #opened > 0 then
-        collapse.arm_area(surface, opened, 0.9)
     end
 
     -- Wall off every void tile touching the carved space — the cavern gets

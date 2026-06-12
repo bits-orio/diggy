@@ -1,0 +1,9 @@
+# Stress is computed from geometry, not accumulated in a ledger
+
+The original Diggy (and our faithful port) tracked ceiling stress as an incremental ledger: every dig added, every support subtracted, forever. Months of playtest bugs — the plug ratchet, cavern double-charging, uncharged tunnels, the arming dump, permanently poisoned saves — were all the same defect: any asymmetric event corrupts the ledger's history irreversibly, and we kept building machinery (spawn registration, per-entity reach records, suppression flags, opened-tile tracking, grace maps, /diggy-vent) to keep it honest.
+
+Our own measurements showed that the honest ledger at steady state equals a pure function of current geometry: `stress(cell) = LOAD × (mask-weighted open-floor fraction) − Σ nearby support contributions − homestead bonus`, with a fully open cell reading exactly 4.0. The ledger was an incremental cache of this function — a performance optimization, not a design. We now compute the function directly for the ~25–120 cells affected by each world-changing event (dig, build, mine, tile change, cavern arming).
+
+Consequences: history cannot poison anything (old-save corruption vanishes — there is no stored stress); identical geometry always reads identically (player-predictable); grace periods, plug rocks, /diggy-vent, per-entity reach records, charge-symmetry guards, and arming stress dumps are deleted. Thresholds (3.57/3.3), the disc mask, support strengths, worm protection, countdowns, and warning markers carry over unchanged — faithful to the original's intended outcome, not its cache. Support Struts research now applies to ALL of a force's walls the moment a tier completes (reach is read live at evaluation).
+
+Cost: ~81 tile reads + one entity query per evaluated cell, only on world-changing events. Trivial at hand-digging rates; the automated sim throttles itself.

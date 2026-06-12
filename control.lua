@@ -42,9 +42,13 @@ script.on_init(function()
 end)
 
 script.on_configuration_changed(function()
-    if not storage.stress then collapse.on_init() end
-    storage.support_reach = storage.support_reach or {}
+    if not storage.pending_collapses then collapse.on_init() end
+    -- ADR 0008: the stress ledger is gone; clear dead state from old saves.
+    storage.stress = nil
+    storage.new_tiles = nil
+    storage.support_reach = nil
     storage.collapse_log = storage.collapse_log or {}
+    storage.warn_renders = storage.warn_renders or {}
     caverns.on_init()
     pop_text.on_init()
     -- Retire the old screen-frame countdown (replaced by world pop texts).
@@ -109,7 +113,7 @@ local function on_dig(event)
     -- when it FIRST opened; re-rolling them respawned the same worms and
     -- re-announced the same tunnels forever.
     if dig.name == "diggy-rubble" then
-        collapse.support_removed(dig.surface, dig.position, dig.name, dig.player_index)
+        collapse.evaluate_around(dig.surface, dig.position, nil, dig.player_index)
         charting.on_dig(dig)
         return
     end
@@ -121,6 +125,9 @@ local function on_dig(event)
     threats.on_dig(dig)
     caverns.on_dig(dig)
     charting.on_dig(dig)
+    -- Geometry changed: re-evaluate stress around the dig (after the
+    -- frontier advance and any carving, so the world is current).
+    collapse.evaluate_around(dig.surface, dig.position, nil, dig.player_index)
 end
 
 -- Public API (ADR 0002 door #2): external mods register declarative threat
@@ -130,6 +137,9 @@ remote.add_interface("diggy-v1", {
     -- Headless test hooks (used by the maintainer's automated benchmarks).
     debug_sim = function(bare) sim.start(nil, bare) end,
     debug_sim_stop = function() sim.stop(nil) end,
+    debug_max_stress = function(surface_index, x1, y1, x2, y2)
+        return collapse.max_in_area(game.surfaces[surface_index], x1, y1, x2, y2)
+    end,
 })
 
 -- Covers dig; other support entities (walls, reactors) feed the stress map.
@@ -143,16 +153,6 @@ end
 local NESTS = { ["biter-spawner"] = true, ["spitter-spawner"] = true }
 for name in pairs(NESTS) do
     removal_filter[#removal_filter + 1] = { filter = "name", name = name }
-end
-
--- Support reach grows with researched diggy-support-reach tiers (per force).
-local function support_reach(force)
-    local reach = 4
-    for i = 1, 6 do
-        local tech = force.technologies["diggy-support-reach-" .. i]
-        if tech and tech.researched then reach = reach + 1 end
-    end
-    return reach
 end
 
 -- Worm deaths can arm their cavern room (see caverns.on_worm_died).
@@ -175,9 +175,7 @@ local function on_removed(event)
     elseif NESTS[entity.name] then
         dig_spawner.on_nest_died(entity)
     else
-        local reach = storage.support_reach and storage.support_reach[entity.unit_number]
-        if storage.support_reach then storage.support_reach[entity.unit_number] = nil end
-        collapse.support_removed(entity.surface, entity.position, entity.name, event.player_index, reach)
+        collapse.evaluate_around(entity.surface, entity.position, 12, event.player_index)
     end
 end
 
@@ -191,28 +189,29 @@ local support_filter = {
 }
 local function on_built(event)
     local entity = event.entity
-    local reach = support_reach(entity.force)
-    if storage.support_reach and entity.unit_number then
-        storage.support_reach[entity.unit_number] = reach
-    end
-    collapse.support_added(entity.surface, entity.position, entity.name, reach)
+    collapse.evaluate_around(entity.surface, entity.position, 12)
 end
 script.on_event(defines.events.on_built_entity, on_built, support_filter)
 script.on_event(defines.events.on_robot_built_entity, on_built, support_filter)
 script.on_event(defines.events.script_raised_built, on_built, support_filter)
 script.on_event(defines.events.script_raised_revive, on_built, support_filter)
 
+local function on_tiles_changed(surface, tiles, player_index)
+    for _, t in pairs(tiles) do
+        collapse.evaluate_around(surface, t.position, 3, player_index)
+    end
+end
 script.on_event(defines.events.on_player_built_tile, function(event)
-    collapse.on_built_tile(game.surfaces[event.surface_index], event.tile, event.tiles)
+    on_tiles_changed(game.surfaces[event.surface_index], event.tiles, event.player_index)
 end)
 script.on_event(defines.events.on_robot_built_tile, function(event)
-    collapse.on_built_tile(event.robot.surface, event.tile, event.tiles)
+    on_tiles_changed(event.robot.surface, event.tiles)
 end)
 script.on_event(defines.events.on_player_mined_tile, function(event)
-    collapse.on_mined_tile(game.surfaces[event.surface_index], event.tiles, event.player_index)
+    on_tiles_changed(game.surfaces[event.surface_index], event.tiles, event.player_index)
 end)
 script.on_event(defines.events.on_robot_mined_tile, function(event)
-    collapse.on_mined_tile(event.robot.surface, event.tiles)
+    on_tiles_changed(event.robot.surface, event.tiles)
 end)
 
 script.on_nth_tick(30, function()
@@ -266,15 +265,6 @@ end)
 commands.add_command("diggy-stress", { "diggy.command-stress" }, function(event)
     local player = event.player_index and game.get_player(event.player_index)
     if player then collapse.debug_overlay(player) end
-end)
-commands.add_command("diggy-vent", { "diggy.command-vent" }, function(event)
-    local player = event.player_index and game.get_player(event.player_index)
-    if not player then return end
-    if not player.admin then
-        player.print({ "diggy.admin-only" })
-        return
-    end
-    collapse.vent(player, tonumber(event.parameter))
 end)
 
 -- Pop-text animation: per tick, but a single table check when nothing is

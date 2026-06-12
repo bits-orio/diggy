@@ -1,10 +1,13 @@
--- Cave collapse, ported faithfully from RedMew Diggy's diggy_cave_collapse:
--- a per-surface stress map at 2x2 cell resolution. Revealing space adds
--- stress (blurred disc mask, size 9, ring weights 2/3/4); supports — wall
--- rocks, stone walls, reinforced flooring — subtract it. Crossing 3.57
--- triggers a delayed cave-in that re-walls the area and crushes entities
--- into buried crushed remains (CONTEXT.md). Stress math is deterministic;
--- identical digging collapses identically across MTS teams.
+-- Cave collapse via STATELESS geometry stress (ADR 0008): a cell's stress is
+-- a pure function of the current world —
+--   stress = LOAD x (mask-weighted open-floor fraction)
+--            - Σ support contributions (entities by live reach, flooring)
+-- recomputed on demand for cells affected by each world-changing event.
+-- No ledger, no history, no possibility of poisoned saves. Thresholds, mask
+-- shape and support strengths preserve the tuned outcome: a fully open
+-- unsupported cell reads exactly 4.0 against the 3.57 threshold, and a
+-- stone-wall lattice with 3-tile gaps holds (~2.5-3.0). Wall strength 5 is
+-- the deliberate deviation from the original's 3 (see ADR 0008 history).
 local hash = require("scripts.lib.hash")
 local mts = require("scripts.mts")
 local pop_text = require("scripts.pop_text")
@@ -14,18 +17,9 @@ local collapse = {}
 local STRESS_THRESHOLD = 3.57
 local NEAR_THRESHOLD = 3.3
 local COLLAPSE_DELAY_TICKS = 150 -- original: 2.5s
-local NEW_TILE_GRACE_TICKS = 180 -- original: 3s; fresh reveals plug, not chain
 local COLLAPSE_MASK_FACTOR = 16 -- original: collapse_threshold_total_strength
+local LOAD = 4.0 -- a fully open, unsupported cell
 
--- Support strengths (original Template.support_beam_entities, adapted:
--- our wall entities stand in for big-rock/huge-rock, void reveal = out-of-map).
--- DELIBERATE deviation from the original's table (rock 2, wall 3): the
--- original's own comment admits a proper pillar grid sits at ~3.3 against a
--- 3.57 threshold — permanently in the cracking band, 0.2 from death.
--- Playtesting found that miserable. Walls at 5 put a 3-tile-gap grid at
--- ~2.5-2.8: solidly safe, one missing pillar forgiven, a multi-pillar hole
--- still fails. Rocks stay at the original 2 so dig accounting (net +1 per
--- cleared tile) and tunnel safety match the original exactly.
 local SUPPORTS = {
     ["diggy-rock"] = 2,
     ["diggy-tree"] = 2,
@@ -42,14 +36,14 @@ local TILE_SUPPORTS = {
     ["refined-hazard-concrete-left"] = 0.06,
     ["refined-hazard-concrete-right"] = 0.06,
 }
-local VOID_REVEAL_STRESS = 1 -- original: out-of-map support strength
 
 collapse.SUPPORT_NAMES = { "diggy-rock", "diggy-tree", "diggy-rubble", "stone-wall", "nuclear-reactor" }
-
--- Disc masks: three rings, relative weights 2 (ring), 3 (disc), 4 (center),
--- normalized to sum 1. Base radius 4 (the original's size-9 mask); larger
--- radii exist for the support-reach research, built on demand.
 local BASE_RADIUS = 4
+local MAX_REACH = 10
+
+-- Disc mask (size 9 at base): rings 2/3/4 normalized. value_of(d²) gives the
+-- per-point weight; supports with researched reach use wider masks, scaled
+-- so per-cell strength stays constant.
 local MASKS = {}
 
 local function build_mask(radius)
@@ -57,20 +51,7 @@ local function build_mask(radius)
     local center_sq = radius_sq / 9
     local disc_sq = radius_sq * 4 / 9
     local weights = { ring = 2, disc = 3, center = 4 }
-    local sum = 0
-    for x = -radius, radius do
-        for y = -radius, radius do
-            local d = x * x + y * y
-            if d <= center_sq then
-                sum = sum + weights.center
-            elseif d <= disc_sq then
-                sum = sum + weights.disc
-            elseif d <= radius_sq then
-                sum = sum + weights.ring
-            end
-        end
-    end
-    local mask = {}
+    local sum, points = 0, 0
     for x = -radius, radius do
         for y = -radius, radius do
             local d = x * x + y * y
@@ -83,121 +64,130 @@ local function build_mask(radius)
                 w = weights.ring
             end
             if w then
-                mask[#mask + 1] = { x = x, y = y, value = w / sum }
+                sum = sum + w
+                points = points + 1
             end
         end
     end
-    return mask
+    return {
+        radius = radius,
+        points = points,
+        value_of = function(d_sq)
+            if d_sq <= center_sq then return weights.center / sum end
+            if d_sq <= disc_sq then return weights.disc / sum end
+            if d_sq <= radius_sq then return weights.ring / sum end
+            return 0
+        end,
+    }
 end
 
 local function mask_for(radius)
-    radius = radius or BASE_RADIUS
-    if not MASKS[radius] then
-        MASKS[radius] = build_mask(radius)
-    end
+    radius = math.min(math.max(radius or BASE_RADIUS, BASE_RADIUS), MAX_REACH)
+    if not MASKS[radius] then MASKS[radius] = build_mask(radius) end
     return MASKS[radius]
 end
-
-local MASK = mask_for(BASE_RADIUS)
+local BASE_MASK = mask_for(BASE_RADIUS)
 
 function collapse.on_init()
-    storage.stress = {}
-    storage.new_tiles = {}
     storage.pending_collapses = {}
     storage.collapse_count = {}
-    -- Ring buffer of recent collapse positions (diagnostics / sim verdicts).
     storage.collapse_log = {}
-    -- Persistent warning markers on cells in the cracking band (render ids).
     storage.warn_renders = {}
-    -- Reach (mask radius) per placed support, keyed by unit_number: removal
-    -- must undo with the SAME mask it was placed with, or stress corrupts.
-    storage.support_reach = {}
 end
 
 local function cell_key(x, y)
     return x .. "," .. y
 end
 
--- Injected by caverns.lua: returns true while a cell sits inside a cavern
--- room still under worm protection (no triggers there until the worms die).
+-- Injected by caverns.lua: true while a worm-guarded room covers the cell.
 collapse.protection_check = nil
 
-local stress_add -- forward declaration: trigger()'s plug branch uses it
-
-local function trigger(surface, x, y, player_index)
-    if not settings.global["diggy-collapse-enabled"].value then return end
-    if collapse.protection_check and collapse.protection_check(surface, x, y) then return end
-
-    -- Fresh reveals plug with a single rock instead of chain-collapsing —
-    -- this is what lets cavern rooms open without instantly caving in.
-    local expiry = storage.new_tiles[surface.index .. ":" .. cell_key(x, y)]
-    if expiry and game.tick < expiry then
-        local tile = surface.get_tile(x, y)
-        if surface.count_entities_filtered { name = collapse.SUPPORT_NAMES, position = { x + 0.5, y + 0.5 }, radius = 0.4 } == 0
-            and tile.valid and tile.name ~= "out-of-map" and not tile.name:find("water", 1, true) then
-            surface.create_entity { name = "diggy-rubble", position = { x + 0.5, y + 0.5 }, force = "neutral" }
-            -- Register the plug like every other spawned rock: without this,
-            -- digging it later was a permanent +4 ratchet — active mining
-            -- zones silently ran far above the steady-state, and collapses
-            -- started firing through proper pillar grids.
-            stress_add(surface, { x = x + 0.5, y = y + 0.5 }, -SUPPORTS["diggy-rubble"])
-        end
-        return
+-- Live Support Struts reach per force: research benefits ALL walls at once.
+local reach_cache, reach_cache_tick = {}, -1
+local function force_reach(force)
+    if reach_cache_tick ~= game.tick then
+        reach_cache, reach_cache_tick = {}, game.tick
     end
-
-    -- Cracking warning, then the ceiling comes down after the delay: an
-    -- unmissable pop at the failure point, since it can be tiles away from
-    -- the dig that caused it.
-    local force = player_index and game.get_player(player_index).force
-        or mts.surface_owner_force(surface)
-    pop_text.spawn(surface, { x = x + 1, y = y + 1 },
-        { "diggy.collapse-imminent-pop" }, { r = 1, g = 0.25, b = 0.05 }, force)
-    for _, player in pairs(force.connected_players) do
-        player.create_local_flying_text {
-            text = { "diggy.cracking-sound-" .. hash.range(surface.map_gen_settings.seed, x, y, 60, 1, 2) },
-            position = { x, y },
-            color = { r = 1, g = 0.3, b = 0 },
-        }
+    local cached = reach_cache[force.index]
+    if cached then return cached end
+    local reach = BASE_RADIUS
+    for i = 1, 6 do
+        local tech = force.technologies["diggy-support-reach-" .. i]
+        if tech and tech.researched then reach = reach + 1 end
     end
-    storage.pending_collapses[#storage.pending_collapses + 1] = {
-        surface_index = surface.index,
-        x = x,
-        y = y,
-        player_index = player_index,
-        at_tick = game.tick + COLLAPSE_DELAY_TICKS,
-    }
+    reach_cache[force.index] = reach
+    return reach
 end
 
--- While true, positive stress never triggers (used for batch-loading a
--- cavern's deferred stress at activation).
-local suppress_triggers = false
+-- ── The function (cell coords are even; a cell spans 2x2 tiles) ──────────
 
--- Add a fraction to one stress cell; trigger when crossing thresholds.
-local function add_cell(surface, x, y, fraction, player_index)
-    x = 2 * math.floor(x * 0.5)
-    y = 2 * math.floor(y * 0.5)
-
-    local map = storage.stress[surface.index]
-    if not map then
-        map = {}
-        storage.stress[surface.index] = map
+function collapse.compute_cell(surface, cx, cy)
+    -- One pass over the base mask: open-ceiling load + own-cell flooring.
+    local load_w = 0
+    local flooring = 0
+    for ox = -BASE_RADIUS, BASE_RADIUS do
+        for oy = -BASE_RADIUS, BASE_RADIUS do
+            local w = BASE_MASK.value_of(ox * ox + oy * oy)
+            if w > 0 then
+                local tile = surface.get_tile(cx + ox, cy + oy)
+                if tile.valid then
+                    local name = tile.name
+                    if name ~= "out-of-map" and not name:find("water", 1, true) then
+                        load_w = load_w + w
+                        if ox >= 0 and ox <= 1 and oy >= 0 and oy <= 1 then
+                            local ts = TILE_SUPPORTS[name]
+                            if ts then flooring = flooring + ts end
+                        end
+                    end
+                end
+            end
+        end
     end
-    local key = cell_key(x, y)
-    local value = (map[key] or 0) + fraction
-    map[key] = value
+    -- A cell holds 4 mask points; fully open ⇒ 4 x Σw = LOAD.
+    local value = LOAD * load_w - flooring
 
-    -- Weak ceiling is VISIBLE: a persistent marker appears the moment a cell
-    -- enters the cracking band and disappears when supports relieve it —
-    -- players can predict where a collapse would land before ever digging
-    -- near it (collapses bleed up to ~4 tiles from the causing dig).
+    -- Supports within maximum possible reach, each by its own (live) mask.
+    for _, entity in pairs(surface.find_entities_filtered {
+        name = collapse.SUPPORT_NAMES,
+        position = { cx + 1, cy + 1 },
+        radius = MAX_REACH + 1.5,
+    }) do
+        local strength = SUPPORTS[entity.name]
+        local reach = BASE_RADIUS
+        if entity.name == "stone-wall" or entity.name == "nuclear-reactor" then
+            reach = force_reach(entity.force)
+        end
+        local mask = mask_for(reach)
+        local dx = cx - math.floor(entity.position.x)
+        local dy = cy - math.floor(entity.position.y)
+        local w = mask.value_of(dx * dx + dy * dy)
+        if w > 0 then
+            value = value - strength * (mask.points / BASE_MASK.points) * 4 * w
+        end
+    end
+    return value
+end
+
+-- ── Markers, triggers, evaluation ────────────────────────────────────────
+
+-- A cell is evaluable only if its anchor tile is real ground: void cells
+-- beyond the frontier see open neighbors and read high, but nothing there
+-- can fall. Every evaluator must apply this — values at void cells are
+-- measurement artifacts, not hazards.
+local function cell_exists(surface, cx, cy)
+    local tile = surface.get_tile(cx, cy)
+    return tile.valid and tile.name ~= "out-of-map"
+end
+
+local function sync_marker(surface, cx, cy, value)
     storage.warn_renders = storage.warn_renders or {}
-    local wkey = surface.index .. ":" .. key
+    local wkey = surface.index .. ":" .. cell_key(cx, cy)
     local marker = storage.warn_renders[wkey]
     if value > NEAR_THRESHOLD and not marker then
         local obj = rendering.draw_sprite {
             sprite = "utility/warning_icon",
             surface = surface,
-            target = { x + 1, y + 1 },
+            target = { cx + 1, cy + 1 },
             x_scale = 0.45,
             y_scale = 0.45,
             tint = { r = 1, g = 0.55, b = 0.1, a = 0.65 },
@@ -208,94 +198,118 @@ local function add_cell(surface, x, y, fraction, player_index)
         if obj then obj.destroy() end
         storage.warn_renders[wkey] = nil
     end
+end
 
-    if fraction > 0 and not suppress_triggers then
-        if value > STRESS_THRESHOLD then
-            trigger(surface, x, y, player_index)
-        elseif value > NEAR_THRESHOLD then
-            for _ = 1, 4 do
-                surface.create_particle {
-                    name = "big-rock-stone-particle-medium",
-                    position = { x + math.random(), y + math.random() },
-                    movement = { 0, 0 },
-                    height = 1,
-                    vertical_speed = -0.04,
-                    frame_speed = 1,
-                }
+local function trigger(surface, cx, cy, player_index)
+    if not settings.global["diggy-collapse-enabled"].value then return end
+    if collapse.protection_check and collapse.protection_check(surface, cx, cy) then return end
+    for _, p in pairs(storage.pending_collapses) do
+        if p.surface_index == surface.index and p.x == cx and p.y == cy then return end
+    end
+
+    -- Unmissable telegraph at the failure point (it can be tiles away from
+    -- the dig that caused it).
+    local force = player_index and game.get_player(player_index).force
+        or mts.surface_owner_force(surface)
+    pop_text.spawn(surface, { x = cx + 1, y = cy + 1 },
+        { "diggy.collapse-imminent-pop" }, { r = 1, g = 0.25, b = 0.05 }, force)
+    for _, player in pairs(force.connected_players) do
+        player.create_local_flying_text {
+            text = { "diggy.cracking-sound-" .. hash.range(surface.map_gen_settings.seed, cx, cy, 60, 1, 2) },
+            position = { cx, cy },
+            color = { r = 1, g = 0.3, b = 0 },
+        }
+    end
+    storage.pending_collapses[#storage.pending_collapses + 1] = {
+        surface_index = surface.index,
+        x = cx,
+        y = cy,
+        player_index = player_index,
+        at_tick = game.tick + COLLAPSE_DELAY_TICKS,
+    }
+end
+
+-- THE entry point after any world-changing event: evaluate every cell within
+-- `radius` tiles, sync warning markers, trigger pendings.
+function collapse.evaluate_around(surface, position, radius, player_index)
+    radius = radius or (BASE_RADIUS + 2)
+    local x0, y0 = math.floor(position.x), math.floor(position.y)
+    for cx = 2 * math.floor((x0 - radius) * 0.5), x0 + radius, 2 do
+        for cy = 2 * math.floor((y0 - radius) * 0.5), y0 + radius, 2 do
+            if cell_exists(surface, cx, cy) then
+                local value = collapse.compute_cell(surface, cx, cy)
+                sync_marker(surface, cx, cy, value)
+                if value > STRESS_THRESHOLD then
+                    trigger(surface, cx, cy, player_index)
+                end
             end
         end
     end
-    return value
 end
 
--- Apply the blurred mask around a position. A wider radius (support-reach
--- research) spreads a proportionally larger total so per-cell strength stays
--- constant — reach grows, protection never thins.
-function stress_add(surface, position, factor, player_index, radius)
-    local mask = mask_for(radius)
-    if radius and radius ~= BASE_RADIUS then
-        factor = factor * (#mask / #MASK)
-    end
-    local x0, y0 = math.floor(position.x), math.floor(position.y)
-    for _, m in pairs(mask) do
-        add_cell(surface, x0 + m.x, y0 + m.y, m.value * factor, player_index)
-    end
-end
-
--- Public API ----------------------------------------------------------------
-
--- A tile was opened (dig or cavern carve): void support removed + grace mark.
-function collapse.tile_revealed(surface, x, y, player_index)
-    storage.new_tiles[surface.index .. ":" .. cell_key(2 * math.floor(x * 0.5), 2 * math.floor(y * 0.5))] =
-        game.tick + NEW_TILE_GRACE_TICKS
-    stress_add(surface, { x = x, y = y }, VOID_REVEAL_STRESS, player_index)
-end
-
-function collapse.support_added(surface, position, name, reach)
-    local strength = SUPPORTS[name]
-    if strength then
-        stress_add(surface, position, -strength, nil, reach)
-    end
-end
-
-function collapse.support_removed(surface, position, name, player_index, reach)
-    local strength = SUPPORTS[name]
-    if strength then
-        stress_add(surface, position, strength, player_index, reach)
-    end
-end
-
-function collapse.on_built_tile(surface, new_tile, tiles)
-    local new_strength = TILE_SUPPORTS[new_tile.name]
-    for _, tile in pairs(tiles) do
-        if new_strength then
-            add_cell(surface, tile.position.x, tile.position.y, -new_strength)
-        end
-        local old_strength = TILE_SUPPORTS[tile.old_tile.name]
-        if old_strength then
-            add_cell(surface, tile.position.x, tile.position.y, old_strength)
+-- Cells over threshold within a disc (cavern arming, diagnostics).
+function collapse.hot_cells(surface, cx, cy, radius)
+    local hot = {}
+    for x = 2 * math.floor((cx - radius) * 0.5), cx + radius, 2 do
+        for y = 2 * math.floor((cy - radius) * 0.5), cy + radius, 2 do
+            if cell_exists(surface, x, y) and collapse.compute_cell(surface, x, y) > STRESS_THRESHOLD then
+                hot[#hot + 1] = { x = x, y = y }
+            end
         end
     end
+    return hot
 end
 
-function collapse.on_mined_tile(surface, tiles, player_index)
-    for _, tile in pairs(tiles) do
-        local strength = TILE_SUPPORTS[tile.old_tile.name]
-        if strength then
-            add_cell(surface, tile.position.x, tile.position.y, strength, player_index)
+function collapse.max_in_area(surface, x1, y1, x2, y2)
+    local maxv = 0
+    for x = 2 * math.floor(x1 * 0.5), x2, 2 do
+        for y = 2 * math.floor(y1 * 0.5), y2, 2 do
+            if cell_exists(surface, x, y) then
+                local v = collapse.compute_cell(surface, x, y)
+                if v > maxv then maxv = v end
+            end
         end
     end
+    return maxv
 end
 
--- Collapse execution ---------------------------------------------------------
+-- Debug overlay (/diggy-stress): computed live, painted for 10 seconds.
+function collapse.debug_overlay(player)
+    local surface = player.surface
+    local px, py = math.floor(player.position.x), math.floor(player.position.y)
+    local shown = 0
+    for x = px - 40, px + 40, 2 do
+        for y = py - 40, py + 40, 2 do
+            local cx, cy = 2 * math.floor(x * 0.5), 2 * math.floor(y * 0.5)
+            local tile = surface.get_tile(cx, cy)
+            if tile.valid and tile.name ~= "out-of-map" then
+                local value = collapse.compute_cell(surface, cx, cy)
+                if value > 0.05 or value < -0.05 then
+                    local t = math.min(math.max(value / STRESS_THRESHOLD, 0), 1)
+                    rendering.draw_text {
+                        text = string.format("%.1f", value),
+                        surface = surface,
+                        target = { cx + 1, cy + 1 },
+                        color = value < 0 and { r = 0.4, g = 0.7, b = 1 }
+                            or { r = t, g = 1 - t, b = 0 },
+                        scale = 0.8,
+                        alignment = "center",
+                        time_to_live = 600,
+                        players = { player.index },
+                    }
+                    shown = shown + 1
+                end
+            end
+        end
+    end
+    player.print({ "diggy.stress-overlay", shown })
+end
+
+-- ── Collapse execution ────────────────────────────────────────────────────
 
 -- Crush an entity: with crushed-remains recovery enabled (off by default),
--- inventories go into a buried character-corpse (CONTEXT.md "Crushed
--- remains"); otherwise the building and its contents are simply destroyed.
+-- inventories go into a buried character-corpse; otherwise destroyed.
 local function crush(surface, entity)
-    -- Characters just die: their vanilla death corpse already preserves the
-    -- full inventory. Extracting it first created a SECOND corpse with
-    -- copies of everything — free item duplication per collapse death.
     if entity.type == "character" then
         entity.die()
         return
@@ -332,77 +346,97 @@ local function crush(surface, entity)
     entity.die()
 end
 
+local function log_collapse(surface_index, x, y)
+    storage.collapse_count[surface_index] = (storage.collapse_count[surface_index] or 0) + 1
+    storage.collapse_log = storage.collapse_log or {}
+    storage.collapse_log[#storage.collapse_log + 1] =
+        { surface_index = surface_index, x = x, y = y, tick = game.tick }
+    if #storage.collapse_log > 60 then table.remove(storage.collapse_log, 1) end
+end
+
+-- Fill one cell's tiles with rubble where unsupported; crush what stands.
+local function fill_cell(surface, cellx, celly, density, seed)
+    local rocks = 0
+    for dx = 0, 1 do
+        for dy = 0, 1 do
+            local tx, ty = cellx + dx, celly + dy
+            local supported = false
+            for _, entity in pairs(surface.find_entities_filtered {
+                area = { { tx + 0.05, ty + 0.05 }, { tx + 0.95, ty + 0.95 } },
+            }) do
+                if SUPPORTS[entity.name] then
+                    supported = true
+                elseif entity.name == "character-corpse" or entity.type == "resource" then
+                    -- buried, not crushed
+                elseif entity.type == "character" or entity.health then
+                    crush(surface, entity)
+                end
+            end
+            local tile = surface.get_tile(tx, ty)
+            if not supported and tile.valid and tile.name ~= "out-of-map"
+                and not tile.name:find("water", 1, true)
+                and (density >= 1 or hash.roll(seed, tx, ty, 80) < density) then
+                surface.create_entity { name = "diggy-rubble", position = { tx + 0.5, ty + 0.5 }, force = "neutral" }
+                rocks = rocks + 1
+            end
+        end
+    end
+    return rocks
+end
+
 local function execute(pending)
     local surface = game.surfaces[pending.surface_index]
     if not surface or not surface.valid then return end
 
-    -- Collect cells still over-stressed within the collapse mask.
-    local map = storage.stress[pending.surface_index] or {}
+    -- Live re-evaluation at execution: pillars placed during the 2.5s
+    -- warning are honored; cells they saved don't fall.
     local positions = {}
-    for _, m in pairs(MASK) do
-        local cx = 2 * math.floor((pending.x + m.x) * 0.5)
-        local cy = 2 * math.floor((pending.y + m.y) * 0.5)
-        local value = map[cell_key(cx, cy)] or 0
-        if value >= STRESS_THRESHOLD - m.value * COLLAPSE_MASK_FACTOR then
-            positions[cell_key(cx, cy)] = { x = cx, y = cy }
-        end
-    end
-    if not next(positions) then return end
-
-    surface.create_entity { name = "big-explosion", position = { pending.x, pending.y } }
-
-    local rocks = 0
-    for _, cell in pairs(positions) do
-        -- Each 2x2 stress cell re-walls its four tiles unless supported.
-        for dx = 0, 1 do
-            for dy = 0, 1 do
-                local tx, ty = cell.x + dx, cell.y + dy
-                local supported = false
-                for _, entity in pairs(surface.find_entities_filtered {
-                    area = { { tx + 0.05, ty + 0.05 }, { tx + 0.95, ty + 0.95 } },
-                }) do
-                    if SUPPORTS[entity.name] then
-                        supported = true
-                    elseif entity.name == "character-corpse" or entity.type == "resource" then
-                        -- buried, not crushed
-                    elseif entity.type == "character" or entity.health then
-                        crush(surface, entity)
-                    end
-                end
-                local tile = surface.get_tile(tx, ty)
-                if not supported and tile.valid and tile.name ~= "out-of-map"
-                    and not tile.name:find("water", 1, true) then
-                    surface.create_entity { name = "diggy-rubble", position = { tx + 0.5, ty + 0.5 }, force = "neutral" }
-                    -- Fallen rock supports the ceiling again (the original
-                    -- registered collapse rocks through its placement events).
-                    stress_add(surface, { x = tx + 0.5, y = ty + 0.5 }, -SUPPORTS["diggy-rubble"])
-                    rocks = rocks + 1
+    for ox = -BASE_RADIUS, BASE_RADIUS do
+        for oy = -BASE_RADIUS, BASE_RADIUS do
+            local w = BASE_MASK.value_of(ox * ox + oy * oy)
+            if w > 0 then
+                local cx = 2 * math.floor((pending.x + ox) * 0.5)
+                local cy = 2 * math.floor((pending.y + oy) * 0.5)
+                local key = cell_key(cx, cy)
+                if positions[key] == nil then
+                    local value = cell_exists(surface, cx, cy)
+                        and collapse.compute_cell(surface, cx, cy) or 0
+                    positions[key] = value >= STRESS_THRESHOLD - w * COLLAPSE_MASK_FACTOR
+                        and { x = cx, y = cy } or false
                 end
             end
         end
     end
 
+    local any = false
+    for _, v in pairs(positions) do
+        if v then any = true end
+    end
+    if not any then return end
+
+    surface.create_entity { name = "big-explosion", position = { pending.x, pending.y } }
+
+    local rocks = 0
+    local seed = surface.map_gen_settings.seed
+    for _, cell in pairs(positions) do
+        if cell then
+            rocks = rocks + fill_cell(surface, cell.x, cell.y, 1, seed)
+        end
+    end
+
     if rocks > 0 then
-        storage.collapse_count[pending.surface_index] = (storage.collapse_count[pending.surface_index] or 0) + 1
-        storage.collapse_log = storage.collapse_log or {}
-        storage.collapse_log[#storage.collapse_log + 1] =
-            { surface_index = pending.surface_index, x = pending.x, y = pending.y, tick = game.tick }
-        if #storage.collapse_log > 60 then table.remove(storage.collapse_log, 1) end
+        log_collapse(pending.surface_index, pending.x, pending.y)
         local force = pending.player_index and game.get_player(pending.player_index).force
             or mts.surface_owner_force(surface)
         force.print({ "diggy.cave-collapse" })
-        -- Cross-team schadenfreude (host-toggleable): other MTS teams hear
-        -- about it with the suffering team's coloured label.
         if settings.global["diggy-collapse-broadcast"].value then
             local label = mts.team_label(force)
             for _, other in pairs(mts.other_team_forces(force)) do
                 other.print({ "diggy.cave-collapse-other", label })
             end
         end
-        -- add_custom_alert needs a LuaEntity at the alert location; the
-        -- original used a throwaway rock as the target, destroyed right after.
         local target = surface.create_entity {
-            name = "diggy-rock",
+            name = "diggy-rubble",
             position = { pending.x + 0.5, pending.y + 0.5 },
             force = "neutral",
         }
@@ -412,173 +446,35 @@ local function execute(pending)
             end
             target.destroy()
         end
+        -- New rubble changed the geometry: refresh markers around the site.
+        collapse.evaluate_around(surface, { x = pending.x, y = pending.y }, BASE_RADIUS * 2)
     end
 end
 
--- Cavern activation: batch-load the room's deferred reveal stress (+1 per
--- carved tile, triggers suppressed) and return the cells that ended over the
--- collapse threshold — the cavern's failure zone.
-function collapse.arm_area(surface, tiles, factor)
-    factor = factor or VOID_REVEAL_STRESS
-    suppress_triggers = true
-    local hot = {}
-    for _, t in pairs(tiles) do
-        for _, m in pairs(MASK) do
-            local value = add_cell(surface, t[1] + m.x, t[2] + m.y, m.value * factor)
-            if value > STRESS_THRESHOLD then
-                local cx = 2 * math.floor((t[1] + m.x) * 0.5)
-                local cy = 2 * math.floor((t[2] + m.y) * 0.5)
-                hot[cell_key(cx, cy)] = { x = cx, y = cy }
-            end
-        end
-    end
-    suppress_triggers = false
-    local list = {}
-    for _, c in pairs(hot) do list[#list + 1] = c end
-    return list
-end
-
--- Cavern collapse: like execute(), but over given cells and deliberately
--- sparse — an ancient ceiling sheds about half its mass, not all of it.
--- The failure zone is re-checked against the LIVE stress map at execution:
--- pillars placed during the countdown push cells back under threshold and
--- those cells hold. Enough pillars and nothing falls at all.
+-- Cavern collapse: sparse (~55%) over the given cells, live re-checked —
+-- cells pillared back under threshold during the countdown are spared.
 function collapse.sparse_collapse(surface, cells, force, seed)
-    local map = storage.stress[surface.index] or {}
     local live = {}
     for _, cell in pairs(cells) do
-        if (map[cell_key(cell.x, cell.y)] or 0) > STRESS_THRESHOLD then
+        if collapse.compute_cell(surface, cell.x, cell.y) > STRESS_THRESHOLD then
             live[#live + 1] = cell
         end
     end
-    cells = live
-    if #cells == 0 then return 0 end
+    if #live == 0 then return 0 end
 
     local rocks = 0
-    for _, cell in pairs(cells) do
-        for dx = 0, 1 do
-            for dy = 0, 1 do
-                local tx, ty = cell.x + dx, cell.y + dy
-                local supported = false
-                for _, entity in pairs(surface.find_entities_filtered {
-                    area = { { tx + 0.05, ty + 0.05 }, { tx + 0.95, ty + 0.95 } },
-                }) do
-                    if SUPPORTS[entity.name] then
-                        supported = true
-                    elseif entity.name == "character-corpse" or entity.type == "resource" then
-                        -- buried, not crushed
-                    elseif entity.type == "character" or entity.health then
-                        crush(surface, entity)
-                    end
-                end
-                local tile = surface.get_tile(tx, ty)
-                if not supported and tile.valid and tile.name ~= "out-of-map"
-                    and not tile.name:find("water", 1, true)
-                    and hash.roll(seed, tx, ty, 80) < 0.55 then
-                    surface.create_entity { name = "diggy-rubble", position = { tx + 0.5, ty + 0.5 }, force = "neutral" }
-                    stress_add(surface, { x = tx + 0.5, y = ty + 0.5 }, -SUPPORTS["diggy-rubble"])
-                    rocks = rocks + 1
-                end
-            end
-        end
+    for _, cell in pairs(live) do
+        rocks = rocks + fill_cell(surface, cell.x, cell.y, 0.55, seed)
     end
     if rocks > 0 then
-        storage.collapse_log = storage.collapse_log or {}
-        storage.collapse_log[#storage.collapse_log + 1] =
-            { surface_index = surface.index, x = cells[1] and cells[1].x or 0, y = cells[1] and cells[1].y or 0, tick = game.tick }
-        if #storage.collapse_log > 60 then table.remove(storage.collapse_log, 1) end
+        log_collapse(surface.index, live[1].x, live[1].y)
         if force then force.print({ "diggy.cavern-collapsed" }) end
+        collapse.evaluate_around(surface, { x = live[1].x, y = live[1].y }, BASE_RADIUS * 3)
     end
     return rocks
 end
 
--- Debug overlay (the original's enable_stress_grid, on demand): paints every
--- stress cell around the player for 10 seconds, green through red.
-function collapse.debug_overlay(player)
-    local surface = player.surface
-    local map = storage.stress[surface.index] or {}
-    local px, py = math.floor(player.position.x), math.floor(player.position.y)
-    local shown = 0
-    for x = px - 40, px + 40, 2 do
-        for y = py - 40, py + 40, 2 do
-            local cx, cy = 2 * math.floor(x * 0.5), 2 * math.floor(y * 0.5)
-            local value = map[cell_key(cx, cy)]
-            if value and (value > 0.05 or value < -0.05) then
-                local t = math.min(math.max(value / STRESS_THRESHOLD, 0), 1)
-                rendering.draw_text {
-                    text = string.format("%.1f", value),
-                    surface = surface,
-                    target = { cx + 1, cy + 1 },
-                    color = value < 0 and { r = 0.4, g = 0.7, b = 1 }
-                        or { r = t, g = 1 - t, b = 0 },
-                    scale = 0.8,
-                    alignment = "center",
-                    time_to_live = 600,
-                    players = { player.index },
-                }
-                shown = shown + 1
-            end
-        end
-    end
-    player.print({ "diggy.stress-overlay", shown })
-end
-
--- Amnesty for saves poisoned by the pre-fix plug ratchet: clamp every cell
--- on the player's surface down to a calm value (default 3.0, override via
--- /diggy-vent <value>). Run it AFTER clearing old plug rubble — digging
--- pre-fix plugs still injects their never-registered support.
--- Cells over the collapse threshold within a disc (cavern arming evaluates
--- the live map — no stress is added at arming anymore).
-function collapse.hot_cells(surface, cx, cy, radius)
-    local map = storage.stress[surface.index] or {}
-    local hot = {}
-    for x = cx - radius, cx + radius, 2 do
-        for y = cy - radius, cy + radius, 2 do
-            local kx, ky = 2 * math.floor(x * 0.5), 2 * math.floor(y * 0.5)
-            local v = map[cell_key(kx, ky)] or 0
-            if v > STRESS_THRESHOLD then
-                hot[cell_key(kx, ky)] = { x = kx, y = ky }
-            end
-        end
-    end
-    local list = {}
-    for _, c in pairs(hot) do list[#list + 1] = c end
-    return list
-end
-
-function collapse.vent_surface(surface, target)
-    local map = storage.stress[surface.index] or {}
-    local vented = 0
-    for key, value in pairs(map) do
-        if value > target then
-            map[key] = target
-            vented = vented + 1
-        end
-    end
-    return vented
-end
-
-function collapse.vent(player, target)
-    target = target or 3.0
-    local vented = collapse.vent_surface(player.surface, target)
-    player.print({ "diggy.stress-vented", vented, string.format("%.1f", target) })
-end
-
--- Max stress cell within a tile-coordinate box (diagnostics/sim).
-function collapse.max_in_area(surface, x1, y1, x2, y2)
-    local map = storage.stress[surface.index] or {}
-    local maxv = 0
-    for x = x1, x2, 2 do
-        for y = y1, y2, 2 do
-            local v = map[cell_key(2 * math.floor(x * 0.5), 2 * math.floor(y * 0.5))] or 0
-            if v > maxv then maxv = v end
-        end
-    end
-    return maxv
-end
-
--- The only timer in the mod: a 0.5s heartbeat that fires pending collapses
--- (the original used a task scheduler for the same 2.5s delay).
+-- The only timer in the mod: a 0.5s heartbeat that fires pending collapses.
 function collapse.on_heartbeat()
     local pending = storage.pending_collapses
     if not pending or #pending == 0 then return end

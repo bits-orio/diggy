@@ -5,7 +5,6 @@
 local Simplex = require("scripts.lib.simplex")
 local hash = require("scripts.lib.hash")
 local ore_veins = require("scripts.ore_veins")
-local collapse = require("scripts.collapse")
 
 local world = {}
 
@@ -110,10 +109,6 @@ local function make_wall(surface, seed, x, y)
     local tree = Simplex.d2(x * TREES.scale, y * TREES.scale, seed + TREES.seed) > TREES.threshold
     local name = tree and "diggy-tree" or "diggy-rock"
     surface.create_entity { name = name, position = { x + 0.5, y + 0.5 }, force = "neutral" }
-    -- Original per-converted-void accounting: +1 reveal stress (with grace),
-    -- -2 for the new wall standing on it. Net -1 per wall tile.
-    collapse.tile_revealed(surface, x, y)
-    collapse.support_added(surface, { x = x + 0.5, y = y + 0.5 }, name)
 end
 
 -- Carve a tile fully open (cavern carving): removes any wall entity, opens
@@ -128,8 +123,6 @@ function world.carve_tile(surface, x, y, force, skip_vein)
         name = { "diggy-rock", "diggy-tree" },
         area = { { x + 0.05, y + 0.05 }, { x + 0.95, y + 0.95 } },
     }) do
-        -- destroy() raises no events, so hand the support back explicitly.
-        collapse.support_removed(surface, entity.position, entity.name)
         entity.destroy()
     end
     if not is_void(surface, x, y) then return false end
@@ -170,13 +163,6 @@ function world.advance_frontier(surface, tiles)
 end
 
 function world.on_dig(dig)
-    -- Original stress model per dig: the dug wall's support is gone (+2
-    -- blurred); the dug tile itself adds nothing (it was already floor).
-    -- Each NEWLY exposed wall tile is where the original's void-removed +1
-    -- applies — see make_wall. Net: tunneling is stress-neutral, opening
-    -- wide unsupported space is not, and re-digging collapse rubble costs
-    -- +2, not more.
-    collapse.support_removed(dig.surface, dig.position, dig.name, dig.player_index)
     world.advance_frontier(dig.surface, { { math.floor(dig.position.x), math.floor(dig.position.y) } })
 end
 
@@ -190,7 +176,7 @@ function build_chunk(surface, area)
     local carve_sq = CARVE_RADIUS * CARVE_RADIUS
     local ring_sq = (CARVE_RADIUS - 2.5) * (CARVE_RADIUS - 2.5)
 
-    local tiles, walls, ores, homestead = {}, {}, {}, {}
+    local tiles, walls, ores = {}, {}, {}
     for x = lt.x, rb.x - 1 do
         for y = lt.y, rb.y - 1 do
             local d_sq = x * x + y * y
@@ -201,7 +187,6 @@ function build_chunk(surface, area)
                 tiles[#tiles + 1] = { name = "water", position = { x, y } }
             else
                 tiles[#tiles + 1] = { name = floor_tile(seed, x, y), position = { x, y } }
-                homestead[#homestead + 1] = { x, y }
                 if d_sq > ring_sq then
                     walls[#walls + 1] = { x, y }
                 elseif hash.roll(seed, x, y, S_STARTER) < 0.12 and d_sq > 4 then
@@ -216,9 +201,23 @@ function build_chunk(surface, area)
         local tree = Simplex.d2(w[1] * TREES.scale, w[2] * TREES.scale, seed + TREES.seed) > TREES.threshold
         local name = tree and "diggy-tree" or "diggy-rock"
         surface.create_entity { name = name, position = { w[1] + 0.5, w[2] + 0.5 }, force = "neutral" }
-        -- Ring walls register as supports (the original "stress-hacked" its
-        -- starting ring) so digging them out later is stress-neutral.
-        collapse.support_added(surface, { x = w[1] + 0.5, y = w[2] + 0.5 }, name)
+    end
+    -- The homestead comes pre-pillared: a stone-wall lattice (3-tile gaps)
+    -- across the carve-out, so the starting cave is protected by the same
+    -- honest geometry as everything players build later. Minable/reusable.
+    if lt.x <= 0 and rb.x > 0 and lt.y <= 0 and rb.y > 0 then
+        local owner = game.forces.player
+        local lattice_max = CARVE_RADIUS - 3
+        -- First lattice line at or after -lattice_max on the 2 (mod 4) grid.
+        local first = 2 - 4 * math.floor((lattice_max + 2) / 4)
+        for x = first, lattice_max, 4 do
+            for y = first, lattice_max, 4 do
+                if x * x + y * y <= lattice_max * lattice_max
+                    and surface.can_place_entity { name = "stone-wall", position = { x + 0.5, y + 0.5 } } then
+                    surface.create_entity { name = "stone-wall", position = { x + 0.5, y + 0.5 }, force = owner }
+                end
+            end
+        end
     end
     for _, o in pairs(ores) do
         surface.create_entity {
@@ -227,14 +226,6 @@ function build_chunk(surface, area)
             amount = 160,
         }
     end
-    -- The homestead is reinforced: a permanent foundation-relief layer over
-    -- the carve-out, so the first expansion ring around spawn (uncharged
-    -- interior = no rock support left on that side) doesn't run hot exactly
-    -- when players have the least infrastructure.
-    if #homestead > 0 then
-        collapse.arm_area(surface, homestead, -0.4)
-    end
-
     -- The starter pool comes stocked.
     if lt.x <= 6 and rb.x > 6 and lt.y <= 0 and rb.y > 0 then
         for _, p in pairs({ { 5.5, 0.5 }, { 6.5, -0.5 }, { 7.5, 1.5 } }) do
