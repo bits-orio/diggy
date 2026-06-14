@@ -27,8 +27,17 @@ end
 
 -- Re-judge every cell currently wearing a warning marker — stale after
 -- anything that changes what supports are worth (research, host tuning).
+-- Snapshot the keys first: evaluate_around -> sync_marker mutates
+-- storage.warn_renders (cleared cells remove their key), so iterating the
+-- live table would feed `next` a stale key ("invalid key to 'next'").
 local function refresh_warned_cells()
-    for wkey in pairs(storage.warn_renders or {}) do
+    local renders = storage.warn_renders
+    if not renders then return end
+    local keys = {}
+    for wkey in pairs(renders) do
+        keys[#keys + 1] = wkey
+    end
+    for _, wkey in pairs(keys) do
         local si, cx, cy = wkey:match("^(%d+):(-?%d+),(-?%d+)$")
         local surface = si and game.surfaces[tonumber(si)]
         if surface and surface.valid then

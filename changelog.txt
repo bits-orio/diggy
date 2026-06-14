@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.2.1
+Date: 2026-06-14
+  Bugfixes:
+    - Fixed an intermittent crash ("invalid key to 'next'" in refresh_warned_cells) when a Support Struts research completed, or a stress setting changed, while warning markers were on screen. Re-judging the marked cells could add or remove markers mid-iteration over the very table being iterated; the cells are now snapshotted first. The crash was timing-dependent, so it surfaced only occasionally on busy multi-team servers.
+---------------------------------------------------------------------------------------------------
 Version: 0.2.0
 Date: 2026-06-12
   Major Features:
