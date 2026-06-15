@@ -97,6 +97,32 @@ script.on_configuration_changed(function()
         end
     end
 
+    -- Heal saves that doubled the spawn ring on MTS team surfaces (the
+    -- ensure_chunk -> build_chunk rebuild, fixed in world.build_chunk). The
+    -- duplicates only ever land in the carve-out, so a tight per-surface
+    -- sweep removes the extra cover, keeping one per tile.
+    local removed = 0
+    for _, surface in pairs(game.surfaces) do
+        if surface.valid then
+            local seen = {}
+            for _, e in pairs(surface.find_entities_filtered {
+                name = { "diggy-rock", "diggy-tree", "diggy-rubble" },
+                area = { { -64, -64 }, { 64, 64 } },
+            }) do
+                local key = math.floor(e.position.x) .. "," .. math.floor(e.position.y)
+                if seen[key] then
+                    e.destroy()
+                    removed = removed + 1
+                else
+                    seen[key] = true
+                end
+            end
+        end
+    end
+    if removed > 0 then
+        log("[DIGGY] removed " .. removed .. " duplicated spawn-ring cover entities")
+    end
+
     -- Saves store runtime settings, so defaults shipped by old releases stick
     -- forever. Rebase saves still on the exact old shipped defaults (the
     -- "every rock spawns biters" era) to the current ones; custom values are

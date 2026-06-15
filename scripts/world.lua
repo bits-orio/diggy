@@ -179,7 +179,15 @@ end
 -- starting cave built instead: open floor, a wall ring, and the starter patch.
 -- Guarded by a registry: the engine generates the starting chunks before mod
 -- handlers can see them, so on_init sweeps existing chunks through this too.
+--
+-- Only ever builds the real "nauvis". Under MTS, team surfaces (team-N-nauvis)
+-- are clones of an already-built nauvis (compat/clone_mirror); ensure_chunk
+-- reaches this for a team surface during frontier advance, and without this
+-- guard it would lay a SECOND spawn ring on top of the cloned one (every
+-- ring tile doubled). The other callers already filter by name; this covers
+-- ensure_chunk and any future caller.
 function build_chunk(surface, area)
+    if surface.name ~= "nauvis" then return end
     local seed = surface.map_gen_settings.seed
     local lt, rb = area.left_top, area.right_bottom
     local carve_sq = CARVE_RADIUS * CARVE_RADIUS

@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.2.2
+Date: 2026-06-14
+  Bugfixes:
+    - Fixed the spawn ring being placed twice on Multi-Team Support team surfaces, leaving two stone rocks stacked on most carve-out tiles (mine one, another remains). Team surfaces are clones of the already-built nauvis; digging on them reached the chunk builder again through the frontier-advance path, which lacked the nauvis-only guard the other build paths already had. build_chunk now only ever builds the real nauvis. Existing saves are healed automatically on update: duplicated spawn cover is swept to one per tile.
+---------------------------------------------------------------------------------------------------
 Version: 0.2.1
 Date: 2026-06-14
   Bugfixes:
