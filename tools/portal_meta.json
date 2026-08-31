@@ -1,0 +1,13 @@
+{
+  "mod": "diggy",
+  "title": "Diggy",
+  "summary": "The whole world is solid rock. Dig your factory out of it by hand, prop up the ceilings you carve, and watch a cave-in bury whoever mined one pillar too many. Ore veins, tunnels, caverns and buried treasure surface only as you dig deeper. A standalone reimagining of RedMew's Diggy scenario for Factorio 2.0, playable solo or in multiplayer.",
+  "category": "content",
+  "tags": [
+    "environment",
+    "mining"
+  ],
+  "license": "default_gnugplv3",
+  "homepage": "https://discord.gg/tWz4FT74pH",
+  "source_url": "https://github.com/bits-orio/diggy"
+}
