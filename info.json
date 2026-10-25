@@ -5,9 +5,9 @@
   "author": "bits-orio",
   "description": "The world is solid rock. Dig it out, support your ceilings, and grow a factory in the caves you carve — collapses bury the careless. A standalone reimagining of RedMew's Diggy scenario, with first-class Multi-Team Support integration.",
   "homepage": "https://github.com/bits-orio/diggy",
-  "factorio_version": "2.0",
+  "factorio_version": "2.1",
   "dependencies": [
-    "base >= 2.0",
+    "base >= 2.1",
     "? multi-team-support >= 0.4.47",
     "? open-discord-bridge",
     "? space-age"
