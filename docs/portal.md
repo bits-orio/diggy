@@ -44,7 +44,7 @@ Difficulty is host-tunable from mod settings and most of it applies mid-game: wa
 
 ## Compatibility
 
-- Requires Factorio 2.0 or newer.
+- Requires Factorio 2.1. On Factorio 2.0, use 0.2.2.
 - Single player and multiplayer, vanilla or modded.
 - Space Age is optional and supported where present.
 - Diggy replaces Nauvis map generation, so it will not co-exist with another mod that overhauls Nauvis terrain.
