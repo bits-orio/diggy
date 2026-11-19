@@ -8,6 +8,13 @@
 # within 3 minutes, a join refused as "mod event handlers are not identical",
 # a desync or a script error fails the run.
 #   usage: dev/run-mp.sh [join-after-seconds] [stay-seconds] [base|space-age]
+#   HARNESS_MP_LATENCY=<ticks>  the server keeps every client's input at least
+#                         that many ticks ahead (minimum_latency_in_ticks in the
+#                         server settings; 30 is half a second)
+#   HARNESS_MP_DELAY=<ms>  the client joins through dev/udp-delay.py, which holds
+#                         every packet that long each way (100 is a 200 ms round
+#                         trip). A fresh client starts at 32 ticks of latency on
+#                         any network; the server lowers it within about 20 s.
 #   HARNESS_PORT=<port>   server port (default: a free port the game picks;
 #                         MP_PORT in harness.conf on engines before 2.1.25)
 set -uo pipefail
@@ -29,7 +36,7 @@ harness_stage "$RUN" "$SET" ${MP_WORLD:+"$DEV/mods/$MP_WORLD"} || exit 1
 cat > "$RUN/server-settings.json" <<JSON
 { "name": "$MOD-mp-test", "description": "", "visibility": { "public": false, "lan": false },
   "require_user_verification": false, "auto_pause": false, "only_admins_can_pause_the_game": true,
-  "autosave_interval": 0, "max_players": 0 }
+  "autosave_interval": 0, "max_players": 0, "minimum_latency_in_ticks": ${HARNESS_MP_LATENCY:-0} }
 JSON
 "$FACTORIO" --config "$RUN/server/config.ini" --create "$RUN/world.zip" --mod-directory "$RUN/mods" \
   --map-gen-seed 1 > "$RUN/create.log" 2>&1 || { tail -20 "$RUN/create.log"; exit 1; }
@@ -40,7 +47,15 @@ PORT="$(harness_bound_port "$RUN/server.log")" || { echo "server never hosted"; 
 echo "server pid=$SERVER port=$PORT, client joins in ${JOIN_AFTER}s"
 timeout "$JOIN_AFTER" tail -f /dev/null
 vdisplay_start "$RUN" 1280x720 || { kill $SERVER; exit 1; }
-"$FACTORIO" --config "$RUN/client/config.ini" --mod-directory "$RUN/mods" --mp-connect "127.0.0.1:$PORT" \
+RELAY=""; JOIN_PORT="$PORT"
+if [ -n "${HARNESS_MP_DELAY:-}" ]; then
+  python3 "$DEV/udp-delay.py" "$PORT" "$HARNESS_MP_DELAY" "$RUN/relay.port" & RELAY=$!
+  for _ in $(seq 1 50); do [ -s "$RUN/relay.port" ] && break; sleep 0.1; done
+  JOIN_PORT="$(cat "$RUN/relay.port" 2>/dev/null)"
+  [ -n "$JOIN_PORT" ] || { echo "the delay relay never started"; kill $SERVER $RELAY 2>/dev/null; vdisplay_stop "$RUN"; exit 1; }
+  echo "client joins through a relay on port $JOIN_PORT, ${HARNESS_MP_DELAY} ms each way"
+fi
+"$FACTORIO" --config "$RUN/client/config.ini" --mod-directory "$RUN/mods" --mp-connect "127.0.0.1:$JOIN_PORT" \
   --window-size 1280x720 --disable-audio > "$RUN/client.log" 2>&1 &
 CLIENT=$!
 echo "client pid=$CLIENT"
@@ -51,7 +66,7 @@ for _ in $(seq 1 180); do
 done
 grep -qi "joined the game" "$RUN/server.log" && { echo "joined, staying ${STAY}s"; timeout "$STAY" tail -f /dev/null; }
 kill $CLIENT 2>/dev/null; sleep 1; kill $SERVER 2>/dev/null; sleep 1
-kill -9 $CLIENT $SERVER 2>/dev/null; vdisplay_stop "$RUN"
+kill -9 $CLIENT $SERVER 2>/dev/null; [ -z "$RELAY" ] || kill $RELAY 2>/dev/null; vdisplay_stop "$RUN"
 if [ -n "$ABBR" ]; then
   echo "---- server ${ABBR}_MP"; grep -h "${ABBR}_MP" "$RUN/server.log" | sed -E "s/^.*${ABBR}_MP /${ABBR}_MP /"
 fi
