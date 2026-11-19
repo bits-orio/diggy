@@ -76,6 +76,7 @@ local function shoot(s, stage)
         zoom = 0.55,
         path = s.run_id .. "/shot-" .. stage .. ".png",
         show_entity_info = true,
+        hide_health_bars = true,
         daytime = 0,
         water_tick = 0,
     })
