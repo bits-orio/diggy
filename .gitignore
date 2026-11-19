@@ -1,2 +1,5 @@
 *.zip
 build/
+
+# Local test runs (dev/run-*.sh)
+/.run/

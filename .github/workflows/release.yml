@@ -128,12 +128,15 @@ jobs:
           # and would otherwise leak into the zip).
           # docs/ and spike/ are design artifacts; spike/ contains a nested
           # mod (its own info.json) that must never reach the portal zip.
+          # dev/ is the test harness; its dev/mods/ hold dev-only mods (each with
+          # its own info.json) that must never reach the portal zip.
           rsync -a --exclude='.git' \
                    --exclude='.github' \
                    --exclude='.gitignore' \
                    --exclude='.luarc.json' \
                    --exclude='tools' \
                    --exclude='docs' \
+                   --exclude='dev' \
                    --exclude='spike' \
                    --exclude='CONTEXT.md' \
                    --exclude='*.sh' \
